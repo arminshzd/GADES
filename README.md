@@ -13,7 +13,7 @@ Gentlest Ascent Dynamics for Enhanced Sampling
 - [ ] Replace the full Hessian calculation with partial Hessian calculations using Lanczos and JVP
 * Use [Lanczos method](https://en.wikipedia.org/wiki/Lanczos_algorithm) for finding the dominant eigenvalue/vector together with [JVP](https://iclr-blogposts.github.io/2024/blog/bench-hvp/) to circumvent full Hessian calculations
 * Compare efficiency and accuracy with the full Hessian results
-- [ ] Run an unbiased and a GADES biased trajectory using OpenMM to probe exploration
+- [ ] Run an unbiased and a GADES biased trajectory using OpenMM to probe exploration (directly manipulating the forces; similar to the Muller-Brown case)
 - [ ] Apply GADES to a larger system
 - [ ] Create path collective variables from GADES and run OpenMM+PLUMED simulations
        
