@@ -4,6 +4,15 @@ import jax.numpy as jnp
 
 @jit
 def muller_brown_potential_base(x):
+    """
+    2D Muller-Brown potential.
+
+    Args:
+        x (jax.ndarray): (2, ) vector of x0 and x1
+
+    Returns:
+        float: Muller-Brown potential value at `x`
+    """
     A = jnp.array([-200, -100, -170, 15])
     a = jnp.array([-1, -1, -6.5, 0.7])
     b = jnp.array([0, 0, 11, 0.6])
@@ -22,26 +31,76 @@ def muller_brown_potential_base(x):
 
 @jit
 def muller_brown_potential(X):
+    """
+    `vmap` version of the Muller-Brown potential.
+
+    Args:
+        X (jax.ndarray): (N, 2) input x0 and x1 values
+
+    Returns:
+        jax.ndarray: (N, 1) Muller-Brown potential values
+    """
     return vmap(muller_brown_potential_base, in_axes=(0))(X)
 
 @jit
 def muller_brown_force_base(x):
+    """ Muller-Brown forces at `x` calculated using AD.
+
+    Args:
+        x (jax.ndarray): (2, ) position
+
+    Returns:
+        jax.ndarray: (2, ) forces vector [-dU/dx0, -dU/dx1]
+    """
     return -grad(muller_brown_potential_base)(x)
 
 @jit
 def muller_brown_force(X):
+    """ `vmap` version of Muller-Brown forces at `X` calculated using AD.
+
+    Args:
+        X (jax.ndarray): (N, 2) position
+
+    Returns:
+        jax.ndarray: (N, 2) forces vectors [-dU/dx0, -dU/dx1]
+    """
     return vmap(muller_brown_force_base, in_axes=(0))(X)
 
 @jit
 def muller_brown_hess_base(x):
+    """ Muller-Brown Hessian at `x` calculated using AD.
+
+    Args:
+        x (jax.ndarray): (2, ) position
+
+    Returns:
+        jax.ndarray: (2, 2) Hessian matrix [[ddU/ddx0, ddU/dx0dx1], [ddU/dx1dx0, ddU/ddx1]]
+    """
     return hessian(muller_brown_potential_base)(x)
 
 @jit
 def muller_brown_hess(X):
+    """ `vmap` version of Muller-Brown Hessian at `x` calculated using AD.
+
+    Args:
+        x (jax.ndarray): (N, 2) position
+
+    Returns:
+        jax.ndarray: (N, 2, 2) Hessian matrix [[ddU/ddx0, ddU/dx0dx1], [ddU/dx1dx0, ddU/ddx1]]
+    """
     return vmap(muller_brown_hess_base, in_axes=(0))(X)
 
 @jit
 def muller_brown_gad_force_base(position, kappa=0.9):
+  """ GADES forces for the Muller-Brown potential at `position` calculated using AD. Calculates the total forces, then finds the most-negative eigenvalue and the corresponding eigenvector of the Hessian and returns negative `kappa` times the force projected in the eigenvector direction as the biasing force.
+
+    Args:
+        position (jax.ndarray): (2, ) position
+        kappa (float): GAD intensity parameter. Determines how much of the GAD force is used for biasing. `kappa=1` is 100% and `kappa=0` is none.
+
+    Returns:
+        jax.ndarray: (2, ) GAD bias forces vector
+    """
 
   # unbiased forces
   forces_u = muller_brown_force_base(position)
@@ -71,8 +130,19 @@ def muller_brown_hessian_plot(x, y):
     # `jax.numpy` supports broadcasting, so this works naturally over grids
     return vmap(lambda yi: vmap(lambda xi: muller_brown_hess_base(jnp.asarray([xi, yi])))(x))(y)
 
+### 
+
 @jit
 def null_force(X):
+    """
+    Helper function for return Null forces. Used for unbiased runs.
+
+    Args:
+        X (jax.ndarray): (d, ) array of position
+
+    Returns:
+        (d, ): Forces vector of all zeros
+    """
     return jnp.zeros_like(X)
 
 @jit
@@ -134,10 +204,10 @@ def baoab_langevin_integrator(positions, velocities, forces_u, forces_b, mass, g
     https://dx.doi.org/10.1093/amrx/abs010
 
     Parameters:
-        positions (np.ndarray): Initial positions (shape: [D, ], where D is dimensionality).
-        velocities (np.ndarray): Initial velocities (shape: [D, ]).
-        forces_u (np.ndarray): Initial unbiased forces (shape: [D, ]).
-        forces_b (np.ndarray): Initial biased forces (shape: [D, ]).
+        positions (jax.ndarray): Initial positions (shape: [D, ], where D is dimensionality).
+        velocities (jax.ndarray): Initial velocities (shape: [D, ]).
+        forces_u (jax.ndarray): Initial unbiased forces (shape: [D, ]).
+        forces_b (jax.ndarray): Initial biased forces (shape: [D, ]).
         mass (float): Mass of the particles (scalar).
         gamma (float): Friction coefficient. (scalar).
         dt (float): Time step. (scalar).
@@ -147,10 +217,10 @@ def baoab_langevin_integrator(positions, velocities, forces_u, forces_b, mass, g
         force_function_b (callable): Function to compute biased forces given positions (returns forces of shape [D, ]).
 
     Returns:
-        positions (np.ndarray): New positions (shape: [D, ]).
-        velocities (np.ndarray): New velocities (shape: [D, ]).
-        forces_u (np.ndarray): Unbiased forces at new position (shape: [D, ]).
-        forces_b (np.ndarray): Biased forces at new position (shape: [D, ]).
+        positions (jax.ndarray): New positions (shape: [D, ]).
+        velocities (jax.ndarray): New velocities (shape: [D, ]).
+        forces_u (jax.ndarray): Unbiased forces at new position (shape: [D, ]).
+        forces_b (jax.ndarray): Biased forces at new position (shape: [D, ]).
     """
     dim = positions.shape[0]
 
