@@ -1,8 +1,9 @@
 import numpy as np
 from jax import vmap, jit, grad, hessian, random, lax
 import jax.numpy as jnp
+from scipy.optimize import approx_fprime
 
-@jit
+#@jit
 def muller_brown_potential_base(x):
     """
     2D Muller-Brown potential.
@@ -253,3 +254,28 @@ def baoab_langevin_integrator(positions, velocities, forces_u, forces_b, mass, g
         velocities += 0.5 * dt * inv_mass * forces
 
     return positions, velocities, forces_u, forces_b
+
+def get_hessian_fdiff(func, x0, epsilon=1e-6):
+    """
+    Compute the Hessian matrix of a scalar function using finite differences.
+
+    Parameters:
+        func (callable): The scalar function f(x) whose Hessian is to be computed.
+        x0 (ndarray): The point at which the Hessian is evaluated.
+        epsilon (float): Small step size for finite difference approximation.
+
+    Returns:
+        ndarray: The Hessian matrix of f at x0.
+    """
+    n = len(x0)
+    hessian_matrix = np.zeros((n, n))
+    f1 = approx_fprime(x0, func, epsilon)  # Gradient at x0
+
+    for i in range(n):
+        x_i = x0.copy()
+        x_i[i] += epsilon  # Perturb along dimension i
+        f2 = approx_fprime(x_i, func, epsilon)  # Gradient after perturbation
+        hessian_matrix[:, i] = (f2 - f1) / epsilon  # Second derivative approximation
+
+    return hessian_matrix
+
