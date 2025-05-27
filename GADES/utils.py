@@ -2,6 +2,9 @@ import numpy as np
 from jax import vmap, jit, grad, hessian, random, lax
 import jax.numpy as jnp
 from scipy.optimize import approx_fprime
+from joblib import Parallel, delayed
+import openmm
+
 
 #@jit
 def muller_brown_potential_base(x):
@@ -279,3 +282,176 @@ def get_hessian_fdiff(func, x0, epsilon=1e-6):
 
     return hessian_matrix
 
+
+def central_diff_ij(func, x0, i, j, epsilon):
+    x_ijp = x0.copy()
+    x_ijm = x0.copy()
+    x_ipj = x0.copy()
+    x_imj = x0.copy()
+
+    x_ijp[i] += epsilon
+    x_ijp[j] += epsilon
+
+    x_ijm[i] += epsilon
+    x_ijm[j] -= epsilon
+
+    x_ipj[i] -= epsilon
+    x_ipj[j] += epsilon
+
+    x_imj[i] -= epsilon
+    x_imj[j] -= epsilon
+
+    f_ijp = func(x_ijp)
+    f_ijm = func(x_ijm)
+    f_ipj = func(x_ipj)
+    f_imj = func(x_imj)
+
+    hess_ij = (f_ijp - f_ijm - f_ipj + f_imj) / (4 * epsilon**2)
+    return (i, j, hess_ij)
+
+def get_hessian_cdiff_parallel(func, x0, epsilon=1e-5, n_jobs=-1):
+    n = len(x0)
+    tasks = [(i, j) for i in range(n) for j in range(i, n)]
+
+    results = Parallel(n_jobs=n_jobs, backend='threading')(
+        delayed(central_diff_ij)(func, x0, i, j, epsilon) for i, j in tasks
+    )
+
+    hessian = np.zeros((n, n))
+    for i, j, val in results:
+        hessian[i, j] = val
+        hessian[j, i] = val  # enforce symmetry
+
+    return hessian
+
+def _get_openMM_forces(context, positions):
+    context.setPositions(positions)
+    state = context.getState(getForces=True)
+    forces = state.getForces(asNumpy=True).value_in_unit(openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
+    return -forces.flatten()
+
+def compute_hessian_force_fd_block_parallel(system, positions, atom_indices, epsilon=1e-4, n_jobs=-1, platform_name='CPU'):
+    """
+    Compute square Hessian block (3M x 3M) for selected atoms only.
+
+    Parameters:
+    - atom_indices: list of atom indices (0-based).
+    - system: OpenMM System.
+    - positions: OpenMM Quantity array (nanometers).
+    - epsilon: finite difference step.
+    - n_jobs: number of parallel workers.
+    - platform_name: 'CPU' or 'CUDA'.
+
+    Returns:
+    - Symmetric Hessian block (3M x 3M).
+    """
+    n_atoms = len(positions)
+    positions_array = np.asarray(positions.value_in_unit(openmm.unit.nanometer))
+
+    # Map atom indices to coordinate indices
+    if atom_indices is None:
+        atom_indices = np.arange(0, n_atoms)
+
+    coord_indices = []
+    for idx in atom_indices:
+        coord_indices.extend([3 * idx, 3 * idx + 1, 3 * idx + 2])
+    m_dof = len(coord_indices)
+
+    def compute_block_column(j):
+        integrator = openmm.VerletIntegrator(1.0 * openmm.unit.femtoseconds)
+        platform = openmm.Platform.getPlatformByName(platform_name)
+        context = openmm.Context(system, integrator, platform)
+
+        positions = positions_array * openmm.unit.nanometer
+        context.setPositions(positions)
+
+        # Reference forces (full, but we'll slice)
+        f0 = _get_openMM_forces(context, positions)[coord_indices]
+
+        # Perturb along coordinate j
+        perturbed_pos = positions_array.flatten()
+        perturbed_pos[j] += epsilon
+        perturbed_pos = perturbed_pos.reshape((-1, 3)) * openmm.unit.nanometer
+
+        f_perturbed = _get_openMM_forces(context, perturbed_pos)[coord_indices]
+
+        df = (f_perturbed - f0) / epsilon
+
+        del context
+        del integrator
+
+        return j, df
+
+    # Parallel over selected j columns only
+    results = Parallel(n_jobs=n_jobs, backend='loky')(
+        delayed(compute_block_column)(j) for j in coord_indices
+    )
+
+    # Assemble square Hessian block
+    hessian_block = np.zeros((m_dof, m_dof))
+    for col_idx, (j, df) in enumerate(results):
+        hessian_block[:, col_idx] = df
+
+    # Symmetrize block
+    hessian_block = 0.5 * (hessian_block + hessian_block.T)
+
+    return hessian_block
+
+def compute_hessian_force_fd_block_serial(system, positions, atom_indices, epsilon=1e-4, platform_name='CPU'):
+    """
+    Compute square Hessian block (3M x 3M) for selected atoms (serial, non-parallel).
+
+    Parameters:
+    - system: OpenMM System.
+    - positions: OpenMM Quantity array (nanometers).
+    - atom_indices: list of atom indices (0-based) to compute block for.
+    - epsilon: finite difference step.
+    - platform_name: 'CPU' or 'CUDA'.
+
+    Returns:
+    - Symmetric Hessian block (3M x 3M).
+    """
+    n_atoms = len(positions)
+    positions_array = positions.value_in_unit(openmm.unit.nanometer)
+    positions_array = np.array(positions_array)  # Convert Vec3 list to numpy
+
+    # Map atom indices to coordinate indices
+    if atom_indices is None:
+        atom_indices = np.arange(0, n_atoms)
+    
+    coord_indices = []
+    for idx in atom_indices:
+        coord_indices.extend([3 * idx, 3 * idx + 1, 3 * idx + 2])
+    m_dof = len(coord_indices)
+
+    # Prepare Hessian block
+    hessian_block = np.zeros((m_dof, m_dof))
+
+    # Create context (reuse for all columns)
+    integrator = openmm.VerletIntegrator(1.0 * openmm.unit.femtoseconds)
+    platform = openmm.Platform.getPlatformByName(platform_name)
+    context = openmm.Context(system, integrator, platform)
+
+    # Reference forces on selected coordinates
+    positions_nm = positions_array * openmm.unit.nanometer
+    f0 = _get_openMM_forces(context, positions_nm)[coord_indices]
+
+    # Loop over selected perturbations
+    for col_idx, j in enumerate(coord_indices):
+        perturbed_pos = positions_array.flatten()
+        perturbed_pos[j] += epsilon
+        perturbed_pos = perturbed_pos.reshape((-1, 3)) * openmm.unit.nanometer
+
+        f_perturbed = _get_openMM_forces(context, perturbed_pos)[coord_indices]
+
+        df = (f_perturbed - f0) / epsilon
+        hessian_block[:, col_idx] = df
+
+    # Symmetrize
+    hessian_block = 0.5 * (hessian_block + hessian_block.T)
+
+    # Cleanup
+    del context
+    del integrator
+
+    return hessian_block
