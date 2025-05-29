@@ -455,3 +455,21 @@ def compute_hessian_force_fd_block_serial(system, positions, atom_indices, epsil
     del integrator
 
     return hessian_block
+
+def clamp_force_magnitudes(forces_flat, max_force):
+    """
+    Clamp the magnitudes of 3D force vectors represented in a flattened array.
+
+    Parameters:
+    - forces_flat (np.ndarray): Flattened array of shape (3 * N,), where each consecutive
+                                triplet is a 3D force vector.
+    - max_force (float): Maximum allowed magnitude for each force vector.
+
+    Returns:
+    - np.ndarray: Flattened array with clamped force vectors, same shape as input.
+    """
+    forces = forces_flat.reshape(-1, 3)
+    magnitudes = np.linalg.norm(forces, axis=1)
+    scale = np.minimum(1, np.where(magnitudes != 0, max_force / magnitudes, 1))
+    forces_clamped = forces * scale[:, np.newaxis]
+    return forces_clamped.flatten()
