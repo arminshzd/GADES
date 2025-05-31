@@ -8,14 +8,13 @@ sys.path.insert(0, os.path.join(repo_root, 'GADES'))
 from utils import compute_hessian_force_fd_block_serial as hessian
 from gades import getGADESBiasForce
 from gades import GADESForceUpdater
-from openmm import CustomExternalForce
 
+# -----------------------------SIMULATION PARAMETERS----------------------------
 NSTEPS = 1e6
 KAPPA = 0.9
 CLAMP_MAGNITUDE = 500
 BIAS_UPDATE_FREQ = 100
 PLATFORM = "CPU"
-# ------------------------------------------------------------------------------
 
 # ---------------------------------USER SYSTEM DEF------------------------------
 from sys import stdout
