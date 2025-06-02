@@ -41,7 +41,7 @@ platform = Platform.getPlatformByName(PLATFORM)
 system = forcefield.createSystem(pdb.topology, nonbondedMethod=app.PME, constraints=app.HBonds)
 
 # DEFINE INTEGRATOR
-integrator = LangevinIntegrator(300 * unit.kelvin, 1 / unit.picosecond, 2 * unit.femtoseconds)
+integrator = LangevinIntegrator(300 * unit.kelvin, 5 / unit.picosecond, 2 * unit.femtoseconds)
 #integrator = VerletIntegrator(2 * unit.femtoseconds)
 
 # DEFINE THERMOSTAT (if needed)
@@ -65,7 +65,7 @@ simulation.reporters.append(app.DCDReporter("traj.dcd", 100))
 simulation.reporters.append(app.StateDataReporter(stdout, 100, step=True, temperature=True, elapsedTime=True, potentialEnergy=True))
 
 # SET UP THE BIASING
-simulation.reporters.append(GADESForceUpdater(biased_force=GAD_force, bias_atom_indices=biasing_atom_ids, hess_func=hessian, clamp_magnitude=CLAMP_MAGNITUDE, kappa=KAPPA, interval=1000))
+simulation.reporters.append(GADESForceUpdater(biased_force=GAD_force, bias_atom_indices=biasing_atom_ids, hess_func=hessian, clamp_magnitude=CLAMP_MAGNITUDE, kappa=KAPPA, interval=BIAS_UPDATE_FREQ))
 
 # RUN THE SIMULATION
 simulation.step(NSTEPS)
