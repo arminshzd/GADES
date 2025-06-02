@@ -20,9 +20,8 @@ PLATFORM = "CPU"
 from sys import stdout
 import numpy as np
 import openmm.app as app
-from openmm import unit, Platform, MonteCarloBarostat
-from openmm.openmm import LangevinIntegrator
-import mdtraj as md
+from openmm import unit, Platform, MonteCarloBarostat, AndersenThermostat
+from openmm.openmm import LangevinIntegrator, VerletIntegrator
 
 openmm_app_path = os.path.join(app.__path__[0], 'data')
 
@@ -43,15 +42,18 @@ system = forcefield.createSystem(pdb.topology, nonbondedMethod=app.PME, constrai
 
 # DEFINE INTEGRATOR
 integrator = LangevinIntegrator(300 * unit.kelvin, 1 / unit.picosecond, 2 * unit.femtoseconds)
+#integrator = VerletIntegrator(2 * unit.femtoseconds)
+
+# DEFINE THERMOSTAT (if needed)
+#thermostat = AndersenThermostat(300 * unit.kelvin, 5 / unit.picosecond)
+#system.addForce(thermostat)
 
 # DEFINE BAROSTAT (if needed)
 barostat = MonteCarloBarostat(1 * unit.bar, 300 * unit.kelvin)
 system.addForce(barostat)
 
 # ADD THE BIAS FORCE TO THE SYSTEM
-GAD_force = getGADESBiasForce()
-for i in range(system.getNumParticles()):
-    GAD_force.addParticle(i, [0.0, 0.0, 0.0])
+GAD_force = getGADESBiasForce(system.getNumParticles())
 system.addForce(GAD_force)
 
 # SET UP THE SIMULATION OBJECT
