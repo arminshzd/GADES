@@ -3,7 +3,7 @@ from openmm import CustomExternalForce
 
 from utils import clamp_force_magnitudes as fclamp
 
-def getGADESBiasForce():
+def getGADESBiasForce(n_particles):
     """
     Function to create the custom force for GADES
 
@@ -14,6 +14,9 @@ def getGADESBiasForce():
     force.addPerParticleParameter("fx")
     force.addPerParticleParameter("fy")
     force.addPerParticleParameter("fz")
+    for i in range(n_particles):
+        force.addParticle(i, [0.0, 0.0, 0.0])
+    force.setForceGroup(1)
     return force
 
 
@@ -109,19 +112,16 @@ class GADESForceUpdater(object):
         """
         state = simulation.context.getState(getPositions=True, getForces=True)
         platform = simulation.context.getPlatform().getName()
-        forces_u = state.getForces(asNumpy=True)
+        forces_u = state.getForces(asNumpy=True)[self.bias_atom_indices, :]
         positions = state.getPositions(asNumpy=True)
         hess = self.hess_func(simulation.system, positions, self.bias_atom_indices, self.hess_step_size, platform)
         w, v = np.linalg.eigh(hess)
         n = v[:, w.argsort()[0]]
         n /= np.linalg.norm(n)
-        ## cast n back to the full position vector
-        n_new = np.zeros_like(positions)
-        n_new[self.bias_atom_indices] = n.reshape(-1, 3)
-        forces_b = -np.dot(n_new.flatten(), forces_u.flatten()) * n_new.flatten() * self.kappa
+        forces_b = -np.dot(n, forces_u.flatten()) * n * self.kappa
         # clamping biased forces so their abs value is never larger than `clamp_magnitude`
         forces_b = fclamp(forces_b, self.clamp_magnitude)
-        return forces_b.reshape(positions.shape)
+        return forces_b.reshape(forces_u.shape)
         
     def describeNextReport(self, simulation):
         """
@@ -154,6 +154,6 @@ class GADESForceUpdater(object):
         """
         print(f"[step {simulation.currentStep}] Updating GAD forces...", flush=True)
         biased_forces = self._get_gad_force(simulation)
-        for i in self.bias_atom_indices:
-            self.biased_force.setParticleParameters(i, i, tuple(biased_forces[i]))
+        for i, idx in enumerate(self.bias_atom_indices):
+            self.biased_force.setParticleParameters(idx, idx, tuple(biased_forces[i]))
         self.biased_force.updateParametersInContext(simulation.context)

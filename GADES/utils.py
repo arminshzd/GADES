@@ -326,7 +326,7 @@ def get_hessian_cdiff_parallel(func, x0, epsilon=1e-5, n_jobs=-1):
 
 def _get_openMM_forces(context, positions):
     context.setPositions(positions)
-    state = context.getState(getForces=True)
+    state = context.getState(getForces=True, groups={0}) # the `groups` keyword makes sure we're only capturing the forces from the original pmf and not the biased one.
     forces = state.getForces(asNumpy=True).value_in_unit(openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
     return -forces.flatten()
 
