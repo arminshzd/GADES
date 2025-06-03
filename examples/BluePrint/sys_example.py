@@ -11,9 +11,11 @@ from gades import GADESForceUpdater
 
 # -----------------------------SIMULATION PARAMETERS----------------------------
 NSTEPS = 1e6
+BIASED = 1
 KAPPA = 0.9
-CLAMP_MAGNITUDE = 500
-BIAS_UPDATE_FREQ = 100
+CLAMP_MAGNITUDE = 1000
+STABILITY_CHECK_FREQ = 1000
+BIAS_UPDATE_FREQ = 2000
 PLATFORM = "CPU"
 
 # ---------------------------------USER SYSTEM DEF------------------------------
@@ -26,9 +28,11 @@ from openmm.openmm import LangevinIntegrator, VerletIntegrator
 openmm_app_path = os.path.join(app.__path__[0], 'data')
 
 # LOAD THE SYSTEM TOPOLOGY
-pdb = app.PDBFile("/Users/arminsh/Documents/GADES/examples/ADP_NumHess/equilibrated.pdb")
+pdb = app.PDBFile("topology.pdb")
 # CHOOSE THE ATOMS TO BIAS
 biasing_atom_ids = np.array([atom.index for atom in pdb.topology.atoms() if atom.residue.name != 'HOH'])
+if BIASED:
+    print(f"[GADES] Biasing {len(biasing_atom_ids)} atoms")
 
 # DEFINE FORCEFIELD
 forcefield = app.ForceField("amber14/protein.ff14SB.xml", 
@@ -41,11 +45,11 @@ platform = Platform.getPlatformByName(PLATFORM)
 system = forcefield.createSystem(pdb.topology, nonbondedMethod=app.PME, constraints=app.HBonds)
 
 # DEFINE INTEGRATOR
-integrator = LangevinIntegrator(300 * unit.kelvin, 5 / unit.picosecond, 2 * unit.femtoseconds)
+integrator = LangevinIntegrator(300 * unit.kelvin, 1 / unit.picosecond, 2 * unit.femtoseconds)
 #integrator = VerletIntegrator(2 * unit.femtoseconds)
 
 # DEFINE THERMOSTAT (if needed)
-#thermostat = AndersenThermostat(300 * unit.kelvin, 5 / unit.picosecond)
+#thermostat = AndersenThermostat(300 * unit.kelvin, 1 / unit.picosecond)
 #system.addForce(thermostat)
 
 # DEFINE BAROSTAT (if needed)
@@ -65,7 +69,8 @@ simulation.reporters.append(app.DCDReporter("traj.dcd", 100))
 simulation.reporters.append(app.StateDataReporter(stdout, 100, step=True, temperature=True, elapsedTime=True, potentialEnergy=True))
 
 # SET UP THE BIASING
-simulation.reporters.append(GADESForceUpdater(biased_force=GAD_force, bias_atom_indices=biasing_atom_ids, hess_func=hessian, clamp_magnitude=CLAMP_MAGNITUDE, kappa=KAPPA, interval=BIAS_UPDATE_FREQ))
+if BIASED:
+    simulation.reporters.append(GADESForceUpdater(biased_force=GAD_force, bias_atom_indices=biasing_atom_ids, hess_func=hessian, clamp_magnitude=CLAMP_MAGNITUDE, kappa=KAPPA, interval=BIAS_UPDATE_FREQ, stability_interval=STABILITY_CHECK_FREQ))
 
 # RUN THE SIMULATION
 simulation.step(NSTEPS)

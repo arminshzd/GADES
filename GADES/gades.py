@@ -1,5 +1,5 @@
 import numpy as np
-from openmm import CustomExternalForce
+from openmm import CustomExternalForce, unit, CMMotionRemover
 
 from utils import clamp_force_magnitudes as fclamp
 
@@ -21,7 +21,7 @@ def getGADESBiasForce(n_particles):
 
 
 class GADESForceUpdater(object):
-    def __init__(self, biased_force, bias_atom_indices, hess_func, clamp_magnitude, kappa, interval):
+    def __init__(self, biased_force, bias_atom_indices, hess_func, clamp_magnitude, kappa, interval, stability_interval=None):
         """
         Class to update biased forces in a molecular simulation using Gentlest Ascent Dynamics (GAD).
         
@@ -49,9 +49,19 @@ class GADESForceUpdater(object):
         self.bias_atom_indices = bias_atom_indices
         self.hess_func = hess_func
         self.clamp_magnitude = clamp_magnitude
-        self.interval = interval
+        if interval < 100:
+            print("[GADES| WARNING] Bias update interval must be larger than 100 steps to ensure system stability. Changing the frequency to 110 steps internally...")
+            self.interval = 110
+        else:
+            self.interval = interval
         self.kappa = kappa
         self.hess_step_size = 1e-6
+        self.check_stability = False
+        self.is_biasing = False
+        self.s_interval = stability_interval
+        
+        # post bias update check
+        self.next_postbias_check_step = None
 
     def set_kappa(self, kappa):
         """
@@ -77,9 +87,28 @@ class GADESForceUpdater(object):
         self.hess_step_size = delta
         return None
     
+    def _is_stable(self, simulation):
+        dof = 0
+        system = simulation.system
+        state = simulation.context.getState(getEnergy=True)
+        for i in range(system.getNumParticles()):
+            if system.getParticleMass(i) > 0*unit.dalton:
+                dof += 3
+        for i in range(system.getNumConstraints()):
+            p1, p2, distance = system.getConstraintParameters(i)
+            if system.getParticleMass(p1) > 0*unit.dalton or system.getParticleMass(p2) > 0*unit.dalton:
+                dof -= 1
+        if any(type(system.getForce(i)) == CMMotionRemover for i in range(system.getNumForces())):
+            dof -= 3
+        temperature = (2*state.getKineticEnergy()/(dof*unit.MOLAR_GAS_CONSTANT_R)).value_in_unit(unit.kelvin)
+        target_temperature = simulation.integrator.getTemperature().value_in_unit(unit.kelvin)
+        if abs(temperature - target_temperature) > 50:
+            return False
+        return True
+    
     def _get_gad_force(self, simulation):
         """
-        Compute the Gentlest Acent Dynamics (GAD) force vector and direction for a molecular system.
+        Compute the Gentlest Ascent Dynamics (GAD) force vector and direction for a molecular system.
 
         Parameters
         ----------
@@ -130,15 +159,36 @@ class GADESForceUpdater(object):
         Parameters
         ----------
         simulation : openmm.app.Simulation
-            The OpenMM simulation object (unused here but required by interface).
 
         Returns
         -------
         tuple
-            A tuple of (interval, pos, vel, force, energy, volume) flags.
-            Only interval is used; all data flags are False.
+            (steps until next report, pos, vel, force, energy, volume)
         """
-        steps = self.interval - simulation.currentStep%self.interval
+        step = simulation.currentStep
+
+        # Compute time to each type of report
+        steps_to_check = (
+            self.s_interval - step % self.s_interval
+            if self.s_interval else np.inf
+        )
+        steps_to_bias = self.interval - step % self.interval
+
+        if self.next_postbias_check_step is not None:
+            steps_to_postbias = max(self.next_postbias_check_step - step, 0)
+        else:
+            steps_to_postbias = np.inf
+
+        # Choose the next event
+        steps = min(steps_to_bias, steps_to_check, steps_to_postbias)
+
+        # Set flags *before* return
+        self.is_biasing = (steps == steps_to_bias)
+        is_forced_check = (steps == steps_to_postbias)
+        is_regular_check = (steps == steps_to_check)
+
+        self.check_stability = is_forced_check or is_regular_check
+
         return (steps, False, False, False, False, False)
 
     def report(self, simulation, state):
@@ -152,8 +202,41 @@ class GADESForceUpdater(object):
         state : openmm.State
             The current simulation state (unused here but required by interface).
         """
-        print(f"[step {simulation.currentStep}] Updating GAD forces...", flush=True)
-        biased_forces = self._get_gad_force(simulation)
-        for i, idx in enumerate(self.bias_atom_indices):
-            self.biased_force.setParticleParameters(idx, idx, tuple(biased_forces[i]))
-        self.biased_force.updateParametersInContext(simulation.context)
+        step = simulation.currentStep
+
+        def remove_bias():
+            for idx in self.bias_atom_indices:
+                self.biased_force.setParticleParameters(idx, idx, (0.0, 0.0, 0.0))
+
+        def apply_bias():
+            biased_forces = self._get_gad_force(simulation)
+            for i, idx in enumerate(self.bias_atom_indices):
+                self.biased_force.setParticleParameters(idx, idx, tuple(biased_forces[i]))
+
+        if self.check_stability:
+            is_stable = self._is_stable(simulation)
+            if not is_stable:
+                print(f"[GADES | step {step}] System is unstable: Removing bias until next cycle...", flush=True)
+                remove_bias()
+            elif self.is_biasing:
+                print(f"[GADES | step {step}] Updating bias forces...", flush=True)
+                apply_bias()
+                self.next_postbias_check_step = step + 100
+
+            self.biased_force.updateParametersInContext(simulation.context)
+            self.check_stability = False
+            self.is_biasing = False
+            if step == self.next_postbias_check_step:
+                self.next_postbias_check_step = None
+            return None
+
+        if self.is_biasing:
+            print(f"[GADES | step {step}] Updating bias forces...", flush=True)
+            apply_bias()
+            self.biased_force.updateParametersInContext(simulation.context)
+            self.is_biasing = False
+            self.next_postbias_check_step = step + 100
+            return None
+
+        # If neither flag is True, do nothing
+        return None
