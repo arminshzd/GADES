@@ -55,7 +55,7 @@ class GADESForceUpdater(object):
         else:
             self.interval = interval
         self.kappa = kappa
-        self.hess_step_size = 1e-6
+        self.hess_step_size = 1e-5
         self.check_stability = False
         self.is_biasing = False
         self.s_interval = stability_interval
