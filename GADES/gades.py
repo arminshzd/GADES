@@ -50,7 +50,7 @@ class GADESForceUpdater(object):
         self.hess_func = hess_func
         self.clamp_magnitude = clamp_magnitude
         if interval < 100:
-            print("[GADES| WARNING] Bias update interval must be larger than 100 steps to ensure system stability. Changing the frequency to 110 steps internally...")
+            print("\033[1;33m[GADES| WARNING] Bias update interval must be larger than 100 steps to ensure system stability. Changing the frequency to 110 steps internally...\033[0m")
             self.interval = 110
         else:
             self.interval = interval
@@ -216,10 +216,10 @@ class GADESForceUpdater(object):
         if self.check_stability:
             is_stable = self._is_stable(simulation)
             if not is_stable:
-                print(f"[GADES | step {step}] System is unstable: Removing bias until next cycle...", flush=True)
+                print(f"\033[1;31m[GADES | step {step}] System is unstable: Removing bias until next cycle...\033[0m", flush=True)
                 remove_bias()
             elif self.is_biasing:
-                print(f"[GADES | step {step}] Updating bias forces...", flush=True)
+                print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
                 apply_bias()
                 self.next_postbias_check_step = step + 100
 
@@ -231,7 +231,7 @@ class GADESForceUpdater(object):
             return None
 
         if self.is_biasing:
-            print(f"[GADES | step {step}] Updating bias forces...", flush=True)
+            print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
             apply_bias()
             self.biased_force.updateParametersInContext(simulation.context)
             self.is_biasing = False
