@@ -1,8 +1,10 @@
 import numpy as np
-from openmm import CustomExternalForce, unit, CMMotionRemover
+from numpy.linalg import norm, svd
+import torch
+import torch.nn as nn
+from sklearn.preprocessing import StandardScaler
 from pydiffmap import diffusion_map as dm
-from scipy.linalg import svd
-from numpy.linalg import norm
+from openmm import CustomExternalForce, unit, CMMotionRemover
 
 from utils import clamp_force_magnitudes as fclamp
 
@@ -24,7 +26,7 @@ def getGADESBiasForce(n_particles):
 
 
 class GADESForceUpdater(object):
-    def __init__(self, biased_force, bias_atom_indices, hess_func, clamp_magnitude, kappa, interval, stability_interval=None):
+    def __init__(self, biased_force, bias_atom_indices, hess_func, clamp_magnitude, kappa, interval, stability_interval=None, logfile_prefix=None):
         """
         Class to update biased forces in a molecular simulation using Gentlest Ascent Dynamics (GAD).
         
@@ -65,6 +67,15 @@ class GADESForceUpdater(object):
         
         # post bias update check
         self.next_postbias_check_step = None
+
+        self.logfile_prefix = logfile_prefix
+        self._evec_log = None
+        self._eval_log = None
+
+        if logfile_prefix is not None:
+            self._evec_log = open(f"{logfile_prefix}_evec.log", "w")
+            self._eval_log = open(f"{logfile_prefix}_eval.log", "w")
+            self._xyz_log  = open(f"{logfile_prefix}_biased_atoms.xyz", "w")
 
     def set_kappa(self, kappa):
         """
@@ -148,11 +159,30 @@ class GADESForceUpdater(object):
         positions = state.getPositions(asNumpy=True)
         hess = self.hess_func(simulation.system, positions, self.bias_atom_indices, self.hess_step_size, platform)
         w, v = np.linalg.eigh(hess)
-        n = v[:, w.argsort()[0]]
+        w_sorted = w.argsort()
+        w_min = w[w_sorted[0]]
+        n = v[:, w_sorted[0]]
         n /= np.linalg.norm(n)
         forces_b = -np.dot(n, forces_u.flatten()) * n * self.kappa
         # clamping biased forces so their abs value is never larger than `clamp_magnitude`
         forces_b = fclamp(forces_b, self.clamp_magnitude)
+
+         # Logging
+        if self._evec_log is not None:
+            self._evec_log.write(" ".join(map(str, n)) + "\n")
+            self._evec_log.flush()
+        if self._eval_log is not None:
+            self._eval_log.write(f"{w_min}\n")
+            self._eval_log.flush()
+        if self._xyz_log is not None:
+            pos_nm = positions[self.bias_atom_indices, :].value_in_unit(unit.nanometer)
+            self._xyz_log.write(f"{len(self.bias_atom_indices)}\n")
+            self._xyz_log.write(f"Step {simulation.currentStep}\n")
+            for coord in pos_nm:
+                x, y, z = coord
+                self._xyz_log.write(f"C {x:.6f} {y:.6f} {z:.6f}\n")  # Placeholder atom type
+            self._xyz_log.flush()
+        
         return forces_b.reshape(forces_u.shape)
         
     def describeNextReport(self, simulation):
@@ -242,25 +272,104 @@ class GADESForceUpdater(object):
             return None
 
         # If neither flag is True, do nothing
-        return None 
+        return None
+    
+    def __del__(self):
+        for f in [self._evec_log, self._eval_log, self._xyz_log]:
+            if f is not None:
+                f.close()
+
+class BetaVAE(nn.Module):
+    def __init__(self, input_dim, latent_dim=2, hidden_dim=256, beta=1.0):
+        super().__init__()
+        self.beta = beta
+
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU()
+        )
+        self.fc_mu = nn.Linear(hidden_dim, latent_dim)
+        self.fc_logvar = nn.Linear(hidden_dim, latent_dim)
+
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, input_dim)
+        )
+
+    def encode(self, x):
+        h = self.encoder(x)
+        return self.fc_mu(h), self.fc_logvar(h)
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def decode(self, z):
+        return self.decoder(z)
+
+    def forward(self, x):
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        x_recon = self.decode(z)
+        return x_recon, mu, logvar
+
+
+def beta_vae_loss(x, x_recon, mu, logvar, beta):
+    recon_loss = nn.functional.mse_loss(x_recon, x, reduction='mean')
+    kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp()) / x.size(0)
+    return recon_loss + beta * kl
+
+
+class VAERCEstimator:
+    def __init__(self, input_dim, latent_dim=2, hidden_dim=256, beta=1.0, epochs=100, batch_size=64, lr=1e-3):
+        self.latent_dim = latent_dim
+        self.hidden_dim = hidden_dim
+        self.beta = beta
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.input_dim = input_dim
+        self.lr = lr
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = BetaVAE(input_dim, latent_dim, hidden_dim, beta).to(self.device)
+
+    def fit(self, X):
+        X = torch.tensor(X, dtype=torch.float32).to(self.device)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        dataset = torch.utils.data.TensorDataset(X)
+        loader = torch.utils.data.DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+
+        self.model.train()
+        for epoch in range(1, self.epochs + 1):
+            epoch_loss = 0.0
+            for batch, in loader:
+                optimizer.zero_grad()
+                x_recon, mu, logvar = self.model(batch)
+                loss = beta_vae_loss(batch, x_recon, mu, logvar, self.beta)
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
+            avg_loss = epoch_loss / len(loader)
+            print(f"Epoch {epoch:3d}/{self.epochs} - Loss: {avg_loss:.6f}")
+
+    def transform(self, X):
+        X = torch.tensor(X, dtype=torch.float32).to(self.device)
+        self.model.eval()
+        with torch.no_grad():
+            mu, _ = self.model.encode(X)
+        return mu.cpu().numpy()
+
 
 class GetRCs:
     def __init__(self, eigenvectors, structures, eigenvalues=None):
-        """
-        Parameters
-        ----------
-        eigenvectors : np.ndarray
-            Array of shape (n_samples, 3N), where each row is a flattened eigenvector.
-        structures : np.ndarray
-            Array of shape (n_samples, N, 3), each frame's atomic coordinates corresponding
-            to the Hessian used to compute the eigenvector.
-        eigenvalues : np.ndarray, optional
-            Array of shape (n_samples,), corresponding eigenvalues of the softest mode.
-            If provided, appended to the aligned eigenvector before dimensionality reduction.
-        """
         self.V = np.copy(eigenvectors)
         self.X = np.copy(structures)
         self.L = np.copy(eigenvalues) if eigenvalues is not None else None
+        self.method = None
+        self.model = None
 
         self._check_dimensions()
         self._normalize_eigenvectors()
@@ -279,9 +388,10 @@ class GetRCs:
             assert self.L.shape[0] == n_samples, "Mismatch in number of eigenvalues"
 
     def _normalize_eigenvectors(self):
-        norms = norm(self.V, axis=1, keepdims=True)
+        norms = norm(self.V, axis=1)
         mask = np.abs(norms - 1.0) > 1e-4
-        self.V[mask[:, 0]] /= norms[mask]
+        if np.any(mask):
+            self.V[mask] /= norms[mask][:, np.newaxis]
 
     def _align_to_reference(self):
         ref_coords = self.X[0] - self.X[0].mean(axis=0)
@@ -305,24 +415,35 @@ class GetRCs:
         return R
 
     def _append_eigenvalues(self):
-        self.V_aligned = np.hstack([self.V_aligned, self.L.reshape(-1, 1)])
+        scaler = StandardScaler()
+        L_scaled = scaler.fit_transform(self.L.reshape(-1, 1))
+        self.V_aligned = np.hstack([self.V_aligned, L_scaled])
 
-    def get_latent_space(self, n_components=2, epsilon='bgh'):
-        """
-        Returns a 2D latent space using diffusion maps on the aligned (and optionally augmented) eigenvectors.
+    def fit(self, method='dmap', n_components=2, **kwargs):
+        self.method = method
 
-        Parameters
-        ----------
-        n_components : int
-            Number of diffusion coordinates (2 for RC discovery).
-        epsilon : str or float
-            Epsilon strategy for the kernel scale (default: 'bgh').
+        if method == 'dmap':
+            self.model = dm.DiffusionMap.from_sklearn(n_evecs=n_components, **kwargs)
+            self.model.fit(self.V_aligned)
 
-        Returns
-        -------
-        latent : np.ndarray
-            Diffusion map embedding of shape (n_samples, n_components)
-        """
-        dmap = dm.DiffusionMap.from_sklearn(n_evecs=n_components, epsilon=epsilon)
-        latent = dmap.fit_transform(self.V_aligned)
-        return latent
+        elif method == 'vae':
+            self.model = VAERCEstimator(input_dim=self.V_aligned.shape[1], latent_dim=n_components, **kwargs)
+            self.model.fit(self.V_aligned)
+
+        else:
+            raise ValueError("Method must be 'dmap' or 'vae'")
+
+    def transform(self):
+        if self.model is None:
+            raise RuntimeError("Model has not been fit. Call 'fit' first.")
+
+        if self.method == 'dmap':
+            return self.model.transform()
+
+        elif self.method == 'vae':
+            return self.model.transform(self.V_aligned)
+
+        else:
+            raise ValueError("Unknown method. Must be 'dmap' or 'vae'")
+
+
