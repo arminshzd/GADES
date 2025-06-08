@@ -1,5 +1,8 @@
 import numpy as np
 from openmm import CustomExternalForce, unit, CMMotionRemover
+from pydiffmap import diffusion_map as dm
+from scipy.linalg import svd
+from numpy.linalg import norm
 
 from utils import clamp_force_magnitudes as fclamp
 
@@ -239,4 +242,87 @@ class GADESForceUpdater(object):
             return None
 
         # If neither flag is True, do nothing
-        return None
+        return None 
+
+class GetRCs:
+    def __init__(self, eigenvectors, structures, eigenvalues=None):
+        """
+        Parameters
+        ----------
+        eigenvectors : np.ndarray
+            Array of shape (n_samples, 3N), where each row is a flattened eigenvector.
+        structures : np.ndarray
+            Array of shape (n_samples, N, 3), each frame's atomic coordinates corresponding
+            to the Hessian used to compute the eigenvector.
+        eigenvalues : np.ndarray, optional
+            Array of shape (n_samples,), corresponding eigenvalues of the softest mode.
+            If provided, appended to the aligned eigenvector before dimensionality reduction.
+        """
+        self.V = np.copy(eigenvectors)
+        self.X = np.copy(structures)
+        self.L = np.copy(eigenvalues) if eigenvalues is not None else None
+
+        self._check_dimensions()
+        self._normalize_eigenvectors()
+        self._align_to_reference()
+        if self.L is not None:
+            self._append_eigenvalues()
+
+    def _check_dimensions(self):
+        assert self.V.ndim == 2, "Eigenvectors must be a 2D array (n_samples, 3N)"
+        assert self.X.ndim == 3, "Structures must be a 3D array (n_samples, N, 3)"
+        n_samples, n_coords = self.V.shape
+        assert self.X.shape[0] == n_samples, "Mismatch in number of frames"
+        assert self.X.shape[1] * 3 == n_coords, "Mismatch between structures and eigenvectors"
+        if self.L is not None:
+            assert self.L.ndim == 1, "Eigenvalues must be a 1D array"
+            assert self.L.shape[0] == n_samples, "Mismatch in number of eigenvalues"
+
+    def _normalize_eigenvectors(self):
+        norms = norm(self.V, axis=1, keepdims=True)
+        mask = np.abs(norms - 1.0) > 1e-4
+        self.V[mask[:, 0]] /= norms[mask]
+
+    def _align_to_reference(self):
+        ref_coords = self.X[0] - self.X[0].mean(axis=0)
+        aligned_V = []
+
+        for x, v in zip(self.X, self.V):
+            x_centered = x - x.mean(axis=0)
+            R = self._kabsch(x_centered, ref_coords)
+            v_reshaped = v.reshape(-1, 3)
+            v_aligned = np.dot(v_reshaped, R.T)
+            aligned_V.append(v_aligned.flatten())
+
+        self.V_aligned = np.array(aligned_V)
+
+    def _kabsch(self, P, Q):
+        C = np.dot(P.T, Q)
+        V, S, Wt = svd(C)
+        d = np.sign(np.linalg.det(np.dot(Wt.T, V.T)))
+        D = np.diag([1, 1, d])
+        R = np.dot(Wt.T, np.dot(D, V.T))
+        return R
+
+    def _append_eigenvalues(self):
+        self.V_aligned = np.hstack([self.V_aligned, self.L.reshape(-1, 1)])
+
+    def get_latent_space(self, n_components=2, epsilon='bgh'):
+        """
+        Returns a 2D latent space using diffusion maps on the aligned (and optionally augmented) eigenvectors.
+
+        Parameters
+        ----------
+        n_components : int
+            Number of diffusion coordinates (2 for RC discovery).
+        epsilon : str or float
+            Epsilon strategy for the kernel scale (default: 'bgh').
+
+        Returns
+        -------
+        latent : np.ndarray
+            Diffusion map embedding of shape (n_samples, n_components)
+        """
+        dmap = dm.DiffusionMap.from_sklearn(n_evecs=n_components, epsilon=epsilon)
+        latent = dmap.fit_transform(self.V_aligned)
+        return latent
