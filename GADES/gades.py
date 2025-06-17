@@ -1,3 +1,5 @@
+import atexit
+
 import numpy as np
 from openmm import CustomExternalForce, unit, CMMotionRemover
 
@@ -21,29 +23,43 @@ def getGADESBiasForce(n_particles):
 
 
 class GADESForceUpdater(object):
-    def __init__(self, biased_force, bias_atom_indices, hess_func, clamp_magnitude, kappa, interval, stability_interval=None):
+    def __init__(self, biased_force, bias_atom_indices, hess_func, clamp_magnitude, kappa, interval, stability_interval=None, logfile_prefix=None):
         """
-        Class to update biased forces in a molecular simulation using Gentlest Ascent Dynamics (GAD).
-        
-        This updater periodically recalculates the biasing force based on the softest mode
-        (smallest eigenvalue direction) from the system's Hessian matrix and applies it to
-        specified atoms.
+        Initialize the GADESForceUpdater for periodically applying Gentlest Ascent Dynamics (GAD) bias forces.
+
+        This class identifies the softest mode of the system (lowest eigenvalue of the Hessian),
+        constructs a directional force along that mode, and applies it to a selected set of atoms.
+        It also performs periodic stability checks and logs key diagnostic information.
 
         Parameters
         ----------
-        biased_force : openmm.CustomExternalForce or similar
-            The OpenMM force object where the biased forces will be applied.
-        bias_atom_indices : array-like
-            Indices of the atoms to which the biased forces are applied.
+        biased_force : openmm.CustomExternalForce
+            The OpenMM force object to which GADES bias forces are applied (should be created using `getGADESBiasForce()`).
+        
+        bias_atom_indices : array-like of int
+            Atom indices that will receive the bias force updates.
+        
         hess_func : callable
-            Function that computes the Hessian matrix given the system, positions, 
-            selected atom indices, a displacement tolerance, and platform.
+            A function that returns the Hessian matrix given (system, positions, atom_indices, step_size, platform).
+        
         clamp_magnitude : float
-            Maximum allowed magnitude for each biased force component.
+            Maximum allowed magnitude for each component of the bias force; used to prevent unphysical updates.
+        
         kappa : float
-            Scaling factor for the biased force.
+            Scaling factor applied to the bias force along the softest mode.
+        
         interval : int
-            Number of simulation steps between force updates.
+            Number of simulation steps between each bias force update. If set below 100, it will be internally overridden to 110.
+        
+        stability_interval : int, optional
+            Frequency (in steps) at which to perform stability checks (based on kinetic temperature).
+            If None, only post-bias stability checks are used.
+        
+        logfile_prefix : str, optional
+            If provided, enables logging of:
+                - Softest eigenvectors:    <prefix>_evec.log
+                - Corresponding eigenvalues: <prefix>_eval.log
+                - Biased atom positions:   <prefix>_biased_atoms.xyz (in XYZ format)
         """
         self.biased_force = biased_force
         self.bias_atom_indices = bias_atom_indices
@@ -62,6 +78,30 @@ class GADESForceUpdater(object):
         
         # post bias update check
         self.next_postbias_check_step = None
+
+        self.logfile_prefix = logfile_prefix
+        self._evec_log = None
+        self._eval_log = None
+
+        if logfile_prefix is not None:
+            # register with atexit for safe handling of log files
+            atexit.register(self._close_logs)
+            
+            self._evec_log = open(f"{logfile_prefix}_evec.log", "w")
+            self._evec_log.write("# Softest-mode eigenvector at each step (one per line)\n")
+            self._evec_log.write("# Columns: step, eigenvector components (flattened)\n")
+            self._evec_log.flush()
+            self._eval_log = open(f"{logfile_prefix}_eval.log", "w")
+            self._eval_log.write("# Sorted eigenvalue spectrum at each step (one line per frame)\n")
+            self._eval_log.write("# Columns: step, eigenvalues from smallest to largest\n")
+            self._eval_log.flush()
+
+            self._xyz_log  = open(f"{logfile_prefix}_biased_atoms.xyz", "w")
+            self._xyz_log.write("# Trajectory of biased atoms only\n")
+            self._xyz_log.write("# Each frame follows XYZ format: N_atoms, comment, atom lines\n")
+            self._xyz_log.write("# Coordinates are in nanometers; atoms are labeled 'C' by default\n")
+            self._xyz_log.flush()
+            
 
     def set_kappa(self, kappa):
         """
@@ -145,11 +185,29 @@ class GADESForceUpdater(object):
         positions = state.getPositions(asNumpy=True)
         hess = self.hess_func(simulation.system, positions, self.bias_atom_indices, self.hess_step_size, platform)
         w, v = np.linalg.eigh(hess)
-        n = v[:, w.argsort()[0]]
+        w_sorted = w.argsort()
+        n = v[:, w_sorted[0]]
         n /= np.linalg.norm(n)
         forces_b = -np.dot(n, forces_u.flatten()) * n * self.kappa
         # clamping biased forces so their abs value is never larger than `clamp_magnitude`
         forces_b = fclamp(forces_b, self.clamp_magnitude)
+
+         # Logging
+        if self._evec_log is not None:
+            self._evec_log.write(f"{simulation.currentStep} " + " ".join(map(str, n)) + "\n")
+            self._evec_log.flush()
+        if self._eval_log is not None:
+            self._eval_log.write(f"{simulation.currentStep} " + " ".join(map(str, w_sorted)) + "\n")
+            self._eval_log.flush()
+        if self._xyz_log is not None:
+            pos_nm = positions[self.bias_atom_indices, :].value_in_unit(unit.nanometer)
+            self._xyz_log.write(f"{len(self.bias_atom_indices)}\n")
+            self._xyz_log.write(f"Step {simulation.currentStep}\n")
+            for coord in pos_nm:
+                x, y, z = coord
+                self._xyz_log.write(f"C {x:.6f} {y:.6f} {z:.6f}\n")  # Placeholder atom type
+            self._xyz_log.flush()
+        
         return forces_b.reshape(forces_u.shape)
         
     def describeNextReport(self, simulation):
@@ -240,3 +298,21 @@ class GADESForceUpdater(object):
 
         # If neither flag is True, do nothing
         return None
+    
+    def _close_logs(self):
+        """
+        Method to close the log files safely. Registered with `atexit` and called by `__del__`
+        """
+        for attr in ("_evec_log", "_eval_log", "_xyz_log"):
+            f = getattr(self, attr, None)
+            if f is not None and not f.closed:
+                try:
+                    f.close()
+                except Exception:
+                    pass
+    
+    def __del__(self):
+        """
+        Clean up the log files when the object is garbage-collected
+        """
+        self._close_logs()
