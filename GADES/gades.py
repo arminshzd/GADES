@@ -197,7 +197,7 @@ class GADESForceUpdater(object):
             self._evec_log.write(f"{simulation.currentStep} " + " ".join(map(str, n)) + "\n")
             self._evec_log.flush()
         if self._eval_log is not None:
-            self._eval_log.write(f"{simulation.currentStep} " + " ".join(map(str, w_sorted)) + "\n")
+            self._eval_log.write(f"{simulation.currentStep} " + " ".join(map(str, w[w_sorted])) + "\n")
             self._eval_log.flush()
         if self._xyz_log is not None:
             pos_nm = positions[self.bias_atom_indices, :].value_in_unit(unit.nanometer)
