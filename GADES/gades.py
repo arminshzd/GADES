@@ -79,6 +79,8 @@ class GADESForceUpdater(object):
         # post bias update check
         self.next_postbias_check_step = None
 
+        # logging
+        self.atom_symbols = None
         self.logfile_prefix = logfile_prefix
         self._evec_log = None
         self._eval_log = None
@@ -146,6 +148,27 @@ class GADESForceUpdater(object):
             return False
         return True
     
+    def _ensure_atom_symbols(self, simulation):
+        """
+        Lazily initializes atom symbols based on the simulation topology.
+
+        Parameters
+        ----------
+        simulation : openmm.app.Simulation
+            The simulation from which to extract atom symbols.
+
+        Sets
+        -----
+        self.atom_symbols : list of str
+            Atomic symbols corresponding to `bias_atom_indices`.
+        """
+        if self.atom_symbols is None:
+            atom_list = list(simulation.topology.atoms())
+            self.atom_symbols = [
+                atom_list[i].element.symbol if atom_list[i].element is not None else "X"
+                for i in self.bias_atom_indices
+            ]
+    
     def _get_gad_force(self, simulation):
         """
         Compute the Gentlest Ascent Dynamics (GAD) force vector and direction for a molecular system.
@@ -203,9 +226,9 @@ class GADESForceUpdater(object):
             pos_nm = positions[self.bias_atom_indices, :].value_in_unit(unit.nanometer)
             self._xyz_log.write(f"{len(self.bias_atom_indices)}\n")
             self._xyz_log.write(f"Step {simulation.currentStep}\n")
-            for coord in pos_nm:
+            for symbol, coord in zip(self.atom_symbols, pos_nm):
                 x, y, z = coord
-                self._xyz_log.write(f"C {x:.6f} {y:.6f} {z:.6f}\n")  # Placeholder atom type
+                self._xyz_log.write(f"{symbol} {x:.6f} {y:.6f} {z:.6f}\n")
             self._xyz_log.flush()
         
         return forces_b.reshape(forces_u.shape)
@@ -224,6 +247,9 @@ class GADESForceUpdater(object):
             (steps until next report, pos, vel, force, energy, volume)
         """
         step = simulation.currentStep
+
+        # Extract atom symbols on the first call for logging
+        self._ensure_atom_symbols(simulation)
 
         # Compute time to each type of report
         steps_to_check = (
@@ -261,6 +287,9 @@ class GADESForceUpdater(object):
             The current simulation state (unused here but required by interface).
         """
         step = simulation.currentStep
+
+        # Defensive fallback in case describeNextReport hasn't been called yet
+        self._ensure_atom_symbols(simulation)
 
         def remove_bias():
             for idx in self.bias_atom_indices:
