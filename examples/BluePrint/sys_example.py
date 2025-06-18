@@ -16,6 +16,7 @@ KAPPA = 0.9
 CLAMP_MAGNITUDE = 1000
 STABILITY_CHECK_FREQ = 1000
 BIAS_UPDATE_FREQ = 2000
+LOG_PREFIX = "log_prefix"
 PLATFORM = "CPU"
 
 # ---------------------------------USER SYSTEM DEF------------------------------
@@ -70,7 +71,7 @@ simulation.reporters.append(app.StateDataReporter(stdout, 100, step=True, temper
 
 # SET UP THE BIASING
 if BIASED:
-    simulation.reporters.append(GADESForceUpdater(biased_force=GAD_force, bias_atom_indices=biasing_atom_ids, hess_func=hessian, clamp_magnitude=CLAMP_MAGNITUDE, kappa=KAPPA, interval=BIAS_UPDATE_FREQ, stability_interval=STABILITY_CHECK_FREQ))
+    simulation.reporters.append(GADESForceUpdater(biased_force=GAD_force, bias_atom_indices=biasing_atom_ids, hess_func=hessian, clamp_magnitude=CLAMP_MAGNITUDE, kappa=KAPPA, interval=BIAS_UPDATE_FREQ, stability_interval=STABILITY_CHECK_FREQ, logfile_prefix=LOG_PREFIX))
 
 # RUN THE SIMULATION
 simulation.step(NSTEPS)
