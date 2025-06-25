@@ -456,6 +456,68 @@ def compute_hessian_force_fd_block_serial(system, positions, atom_indices, epsil
 
     return hessian_block
 
+def compute_hessian_force_fd_richardson(system, positions, atom_indices, epsilon=1e-4, platform_name='CPU'):
+    """
+    Compute Hessian block using Richardson extrapolation with 3 step sizes: eps, eps/2, eps/4.
+
+    Parameters:
+    - system: OpenMM System.
+    - positions: OpenMM Quantity array (nanometers).
+    - atom_indices: list of atom indices (0-based) to compute block for.
+    - epsilon: base finite difference step.
+    - platform_name: 'CPU' or 'CUDA'.
+
+    Returns:
+    - Symmetric Hessian block (3M x 3M) with third-order accuracy.
+    """
+    n_atoms = len(positions)
+    positions_array = positions.value_in_unit(openmm.unit.nanometer)
+    positions_array = np.array(positions_array)
+
+    if atom_indices is None:
+        atom_indices = np.arange(0, n_atoms)
+
+    coord_indices = []
+    for idx in atom_indices:
+        coord_indices.extend([3 * idx, 3 * idx + 1, 3 * idx + 2])
+    m_dof = len(coord_indices)
+
+    hessian_block = np.zeros((m_dof, m_dof))
+
+    # Create context
+    integrator = openmm.VerletIntegrator(1.0 * openmm.unit.femtoseconds)
+    platform = openmm.Platform.getPlatformByName(platform_name)
+    context = openmm.Context(system, integrator, platform)
+
+    # Baseline force
+    f0 = _get_openMM_forces(context, positions_array * openmm.unit.nanometer)[coord_indices]
+
+    for col_idx, j in enumerate(coord_indices):
+        f_eps_list = []
+        for factor in [1.0, 0.5, 0.25]:
+            perturbed_pos = positions_array.copy().flatten()
+            perturbed_pos[j] += factor * epsilon
+            perturbed_pos = perturbed_pos.reshape((-1, 3)) * openmm.unit.nanometer
+            f = _get_openMM_forces(context, perturbed_pos)[coord_indices]
+            f_eps_list.append(f)
+
+        # Finite differences
+        D0 = (f_eps_list[0] - f0) / epsilon
+        D1 = (f_eps_list[1] - f0) / (epsilon / 2)
+        D2 = (f_eps_list[2] - f0) / (epsilon / 4)
+
+        # Richardson extrapolation to O(epsilon^3)
+        R1_0 = 2 * D1 - D0
+        R1_1 = 2 * D2 - D1
+        R2_0 = (4 * R1_1 - R1_0) / 3
+
+        hessian_block[:, col_idx] = R2_0
+
+    hessian_block = 0.5 * (hessian_block + hessian_block.T)
+
+    del context, integrator
+    return hessian_block
+
 def clamp_force_magnitudes(forces_flat, max_force):
     """
     Clamp the magnitudes of 3D force vectors represented in a flattened array.
