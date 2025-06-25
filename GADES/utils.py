@@ -456,9 +456,9 @@ def compute_hessian_force_fd_block_serial(system, positions, atom_indices, epsil
 
     return hessian_block
 
-def compute_hessian_force_fd_richardson(system, positions, atom_indices, epsilon=1e-4, platform_name='CPU'):
+def compute_hessian_force_fd_richardson(system, positions, atom_indices, epsilon=1e-4, platform_name='CPU', factors=None):
     """
-    Compute Hessian block using Richardson extrapolation with 3 step sizes: eps, eps/2, eps/4.
+    Compute Hessian block using recursive Richardson extrapolation over arbitrary step sizes.
 
     Parameters:
     - system: OpenMM System.
@@ -466,10 +466,14 @@ def compute_hessian_force_fd_richardson(system, positions, atom_indices, epsilon
     - atom_indices: list of atom indices (0-based) to compute block for.
     - epsilon: base finite difference step.
     - platform_name: 'CPU' or 'CUDA'.
+    - factors: list of step size scaling factors (e.g., [1.0, 0.5, 0.25]). Must be decreasing.
 
     Returns:
-    - Symmetric Hessian block (3M x 3M) with third-order accuracy.
+    - Symmetric Hessian block (3M x 3M) with extrapolated accuracy.
     """
+    if factors is None:
+        factors = [1.0, 0.5, 0.25]  # Default: up to third order
+
     n_atoms = len(positions)
     positions_array = positions.value_in_unit(openmm.unit.nanometer)
     positions_array = np.array(positions_array)
@@ -493,26 +497,31 @@ def compute_hessian_force_fd_richardson(system, positions, atom_indices, epsilon
     f0 = _get_openMM_forces(context, positions_array * openmm.unit.nanometer)[coord_indices]
 
     for col_idx, j in enumerate(coord_indices):
-        f_eps_list = []
-        for factor in [1.0, 0.5, 0.25]:
+        # First, compute all finite-difference derivatives
+        D = []
+        for factor in factors:
             perturbed_pos = positions_array.copy().flatten()
             perturbed_pos[j] += factor * epsilon
             perturbed_pos = perturbed_pos.reshape((-1, 3)) * openmm.unit.nanometer
             f = _get_openMM_forces(context, perturbed_pos)[coord_indices]
-            f_eps_list.append(f)
+            d = (f - f0) / (factor * epsilon)
+            D.append(d)
 
-        # Finite differences
-        D0 = (f_eps_list[0] - f0) / epsilon
-        D1 = (f_eps_list[1] - f0) / (epsilon / 2)
-        D2 = (f_eps_list[2] - f0) / (epsilon / 4)
+        # Build Richardson tableau
+        R = [D]
+        for k in range(1, len(factors)):
+            prev = R[-1]
+            new = []
+            for i in range(len(prev) - 1):
+                r = (factors[i] / factors[i + k]) ** 1  # first-order FD
+                Rij = (r * prev[i + 1] - prev[i]) / (r - 1)
+                new.append(Rij)
+            R.append(new)
 
-        # Richardson extrapolation to O(epsilon^3)
-        R1_0 = 2 * D1 - D0
-        R1_1 = 2 * D2 - D1
-        R2_0 = (4 * R1_1 - R1_0) / 3
+        # Take the most extrapolated value
+        hessian_block[:, col_idx] = R[-1][0]
 
-        hessian_block[:, col_idx] = R2_0
-
+    # Symmetrize
     hessian_block = 0.5 * (hessian_block + hessian_block.T)
 
     del context, integrator
