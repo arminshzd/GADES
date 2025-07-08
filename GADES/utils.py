@@ -472,7 +472,7 @@ def compute_hessian_force_fd_richardson(system, positions, atom_indices, epsilon
     - Symmetric Hessian block (3M x 3M) with extrapolated accuracy.
     """
     if factors is None:
-        factors = [1.0, 0.5, 0.25]  # Default: up to third order
+        factors = [1.0, 0.5]  # Default: up to second order
 
     n_atoms = len(positions)
     positions_array = positions.value_in_unit(openmm.unit.nanometer)
