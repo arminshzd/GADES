@@ -5,9 +5,9 @@ import os
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, os.path.join(repo_root, 'GADES'))
 
-from utils import compute_hessian_force_fd_block_serial as hessian
+from utils import compute_hessian_force_fd_richardson as hessian
 from gades import getGADESBiasForce
-from gades import GADESForceUpdater
+from gades import GADESForceUpdater, StepSizeTuner
 
 # -----------------------------SIMULATION PARAMETERS----------------------------
 NSTEPS = 1e6
@@ -32,8 +32,6 @@ openmm_app_path = os.path.join(app.__path__[0], 'data')
 pdb = app.PDBFile("topology.pdb")
 # CHOOSE THE ATOMS TO BIAS
 biasing_atom_ids = np.array([atom.index for atom in pdb.topology.atoms() if atom.residue.name != 'HOH'])
-if BIASED:
-    print(f"[GADES] Biasing {len(biasing_atom_ids)} atoms")
 
 # DEFINE FORCEFIELD
 forcefield = app.ForceField("amber14/protein.ff14SB.xml", 
@@ -65,13 +63,28 @@ system.addForce(GAD_force)
 simulation = app.Simulation(pdb.topology, system, integrator, platform)
 simulation.context.setPositions(pdb.positions)
 
+# SET UP THE BIASING
+if BIASED:
+    GADESupdater = GADESForceUpdater(
+        biased_force=GAD_force, 
+        bias_atom_indices=biasing_atom_ids, 
+        hess_func=hessian, 
+        clamp_magnitude=CLAMP_MAGNITUDE, 
+        kappa=KAPPA, 
+        interval=BIAS_UPDATE_FREQ, 
+        stability_interval=STABILITY_CHECK_FREQ, 
+        logfile_prefix=LOG_PREFIX
+    )
+    step_reporter = StepSizeTuner(
+    gades_updater=GADESupdater,
+    )
+
+    simulation.reporters.append(step_reporter)
+    simulation.reporters.append(GADESupdater)
+
 # SET UP THE REPORTERS
 simulation.reporters.append(app.DCDReporter("traj.dcd", 100))
 simulation.reporters.append(app.StateDataReporter(stdout, 100, step=True, temperature=True, elapsedTime=True, potentialEnergy=True))
-
-# SET UP THE BIASING
-if BIASED:
-    simulation.reporters.append(GADESForceUpdater(biased_force=GAD_force, bias_atom_indices=biasing_atom_ids, hess_func=hessian, clamp_magnitude=CLAMP_MAGNITUDE, kappa=KAPPA, interval=BIAS_UPDATE_FREQ, stability_interval=STABILITY_CHECK_FREQ, logfile_prefix=LOG_PREFIX))
 
 # RUN THE SIMULATION
 simulation.step(NSTEPS)
