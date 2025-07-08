@@ -84,6 +84,7 @@ class GADESForceUpdater(object):
         self.logfile_prefix = logfile_prefix
         self._evec_log = None
         self._eval_log = None
+        self._xyz_log = None
 
         if logfile_prefix is not None:
             # register with atexit for safe handling of log files
