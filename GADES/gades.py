@@ -5,12 +5,19 @@ from openmm import CustomExternalForce, unit, CMMotionRemover
 
 from utils import clamp_force_magnitudes as fclamp
 
-def getGADESBiasForce(n_particles):
+def getGADESBiasForce(n_particles: int) -> CustomExternalForce:
     """
-    Function to create the custom force for GADES
+    Create and return a CustomExternalForce for applying GADES biasing forces.
 
-    Returns:
-        CustomExternalForce: OpenMM custom force class generated for GADES biasing
+    Parameters
+    ----------
+    n_particles : int
+        Number of particles in the system.
+
+    Returns
+    -------
+    CustomExternalForce
+        Configured OpenMM force object for GADES biasing.
     """
     force = CustomExternalForce("fx*x+fy*y+fz*z")
     force.addPerParticleParameter("fx")
@@ -23,7 +30,9 @@ def getGADESBiasForce(n_particles):
 
 
 class GADESForceUpdater(object):
-    def __init__(self, biased_force, bias_atom_indices, hess_func, clamp_magnitude, kappa, interval, stability_interval=None, logfile_prefix=None):
+    def __init__(self, biased_force, bias_atom_indices, hess_func, 
+                 clamp_magnitude: float, kappa: float, interval: int, 
+                 stability_interval: int = None, logfile_prefix: str = None):
         """
         Initialize the GADESForceUpdater for periodically applying Gentlest Ascent Dynamics (GAD) bias forces.
 
@@ -75,6 +84,7 @@ class GADESForceUpdater(object):
         self.check_stability = False
         self.is_biasing = False
         self.s_interval = stability_interval
+        self.eigenvec = None
         
         # post bias update check
         self.next_postbias_check_step = None
@@ -106,7 +116,7 @@ class GADESForceUpdater(object):
             self._xyz_log.flush()
             
 
-    def set_kappa(self, kappa):
+    def set_kappa(self, kappa: float) -> None:
         """
         Update the scaling factor for the biased force.
 
@@ -118,7 +128,7 @@ class GADESForceUpdater(object):
         self.kappa = kappa
         return None
     
-    def set_hess_step_size(self, delta):
+    def set_hess_step_size(self, delta: float) -> None:
         """
         Update the displacement step size used in the Hessian calculation.
 
@@ -129,8 +139,32 @@ class GADESForceUpdater(object):
         """
         self.hess_step_size = delta
         return None
+
+    def set_eigenvec(self, vec: np.ndarray) -> None:
+        """
+        Provide a precomputed softest eigenvector to be used during biasing.
+
+        Parameters
+        ----------
+        vec : np.ndarray
+            The softest-mode eigenvector.
+        """
+        self.eigenvec = vec
+        return None
     
-    def _is_stable(self, simulation):
+    def _is_stable(self, simulation) -> bool:
+        """
+        Determine whether the simulation is thermodynamically stable.
+
+        Parameters
+        ----------
+        simulation : openmm.app.Simulation
+
+        Returns
+        -------
+        bool
+            True if within temperature threshold; False otherwise.
+        """
         dof = 0
         system = simulation.system
         state = simulation.context.getState(getEnergy=True)
@@ -149,7 +183,7 @@ class GADESForceUpdater(object):
             return False
         return True
     
-    def _ensure_atom_symbols(self, simulation):
+    def _ensure_atom_symbols(self, simulation) -> None:
         """
         Lazily initializes atom symbols based on the simulation topology.
 
@@ -170,7 +204,7 @@ class GADESForceUpdater(object):
                 for i in self.bias_atom_indices
             ]
     
-    def _get_gad_force(self, simulation):
+    def _get_gad_force(self, simulation) -> np.ndarray:
         """
         Compute the Gentlest Ascent Dynamics (GAD) force vector and direction for a molecular system.
 
@@ -203,15 +237,21 @@ class GADESForceUpdater(object):
         clamped, and reshaped to match the atomic positions.
 
         """
+        # because the StepTuner is running before the ForceUpdater, We don't
+        # need to re-calculate the softest eigenvector anymore. just use the one
+        # that comes from stepTuner.
         state = simulation.context.getState(getPositions=True, getForces=True)
-        platform = simulation.context.getPlatform().getName()
-        forces_u = state.getForces(asNumpy=True)[self.bias_atom_indices, :]
-        positions = state.getPositions(asNumpy=True)
-        hess = self.hess_func(simulation.system, positions, self.bias_atom_indices, self.hess_step_size, platform)
-        w, v = np.linalg.eigh(hess)
-        w_sorted = w.argsort()
-        n = v[:, w_sorted[0]]
+        if self.eigenvec is None:
+            platform = simulation.context.getPlatform().getName()
+            positions = state.getPositions(asNumpy=True)
+            hess = self.hess_func(simulation.system, positions, self.bias_atom_indices, self.hess_step_size, platform)
+            w, v = np.linalg.eigh(hess)
+            w_sorted = w.argsort()
+            n = v[:, w_sorted[0]]
+        else:
+            n = self.eigenvec
         n /= np.linalg.norm(n)
+        forces_u = state.getForces(asNumpy=True)[self.bias_atom_indices, :]
         forces_b = -np.dot(n, forces_u.flatten()) * n * self.kappa
         # clamping biased forces so their abs value is never larger than `clamp_magnitude`
         forces_b = fclamp(forces_b, self.clamp_magnitude)
@@ -234,7 +274,7 @@ class GADESForceUpdater(object):
         
         return forces_b.reshape(forces_u.shape)
         
-    def describeNextReport(self, simulation):
+    def describeNextReport(self, simulation) -> tuple:
         """
         Define the interval and required data for the next report.
 
@@ -276,7 +316,7 @@ class GADESForceUpdater(object):
 
         return (steps, False, False, False, False, False)
 
-    def report(self, simulation, state):
+    def report(self, simulation, state) -> None:
         """
         Apply the computed biased forces at the current simulation step.
 
@@ -300,6 +340,8 @@ class GADESForceUpdater(object):
             biased_forces = self._get_gad_force(simulation)
             for i, idx in enumerate(self.bias_atom_indices):
                 self.biased_force.setParticleParameters(idx, idx, tuple(biased_forces[i]))
+            self.eigenvec = None
+            self.next_postbias_check_step = step + 100
 
         if self.check_stability:
             is_stable = self._is_stable(simulation)
@@ -309,7 +351,7 @@ class GADESForceUpdater(object):
             elif self.is_biasing:
                 print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
                 apply_bias()
-                self.next_postbias_check_step = step + 100
+                
 
             self.biased_force.updateParametersInContext(simulation.context)
             self.check_stability = False
@@ -323,13 +365,12 @@ class GADESForceUpdater(object):
             apply_bias()
             self.biased_force.updateParametersInContext(simulation.context)
             self.is_biasing = False
-            self.next_postbias_check_step = step + 100
             return None
 
         # If neither flag is True, do nothing
         return None
     
-    def _close_logs(self):
+    def _close_logs(self) -> None:
         """
         Method to close the log files safely. Registered with `atexit` and called by `__del__`
         """
@@ -341,8 +382,131 @@ class GADESForceUpdater(object):
                 except Exception:
                     pass
     
-    def __del__(self):
+    def __del__(self) -> None:
         """
         Clean up the log files when the object is garbage-collected
         """
         self._close_logs()
+
+class StepSizeTuner(object):
+    def __init__(self, gades_updater, 
+                 tolerance: float = 0.05,
+                 step_size_list: list = [1e-4, 5e-5, 1e-5, 5e-6, 1e-6]):
+        """
+        Reporter that dynamically selects the largest step size for Hessian finite differences
+        by checking cosine similarity between eigenvectors from 2- and 3-point extrapolation.
+
+        Parameters
+        ----------
+        gades_updater : GADESForceUpdater
+            Instance whose step size and eigenvector will be updated.
+        tolerance : float, optional
+            Allowed deviation from cosine similarity of 1.0.
+        step_size_list : list of float, optional
+            Candidate step sizes, in descending order.
+        """
+        self.gades_updater = gades_updater
+        self.reportInterval = self.gades_updater.interval
+        self.hess_func = self.gades_updater.hess_func
+        self.atom_indices = self.gades_updater.bias_atom_indices
+        self.tolerance = tolerance
+        self.step_sizes = step_size_list
+        self.eigenvec = None
+
+    def _get_softest_mode(self, hessian: np.ndarray) -> np.ndarray:
+        """
+        Extract the eigenvector associated with the most negative eigenvalue.
+
+        Parameters
+        ----------
+        hessian : np.ndarray
+
+        Returns
+        -------
+        np.ndarray
+            Softest-mode eigenvector.
+        """
+        evals, evecs = np.linalg.eigh(hessian)
+        return evecs[:, np.argmin(evals)]
+
+    def _cosine_similarity(self, v1: np.ndarray, v2: np.ndarray) -> float:
+        """
+        Compute cosine similarity between two vectors.
+
+        Parameters
+        ----------
+        v1 : np.ndarray
+        v2 : np.ndarray
+
+        Returns
+        -------
+        float
+            Cosine similarity.
+        """
+        return np.dot(v1 / np.linalg.norm(v1), v2 / np.linalg.norm(v2))
+
+    def _find_valid_step_size(self, system, positions, platform: str) -> float:
+        """
+        Find the largest step size for which the softest mode is consistent between
+        2- and 3-point Richardson extrapolation (within cosine similarity tolerance).
+
+        Parameters
+        ----------
+        system : openmm.System
+        positions : openmm.Vec3 array or Quantity
+        platform : str
+
+        Returns
+        -------
+        float or None
+            Valid step size or None if none found.
+        """
+        for eps in self.step_sizes:
+            hess_2 = self.hess_func(system, positions, self.atom_indices, eps, platform, [1.0, 0.5])
+            hess_3 = self.hess_func(system, positions, self.atom_indices, eps, platform, [1.0, 0.5, 0.25])
+
+            vec2 = self._get_softest_mode(hess_2)
+            vec3 = self._get_softest_mode(hess_3)
+
+            sim = self._cosine_similarity(vec2, vec3)
+            if abs(sim - 1.0) <= self.tolerance:
+                self.eigenvec = vec2
+                return eps
+        return None
+
+    def describeNextReport(self, simulation) -> tuple:
+        """
+        Return number of steps until next report and required data.
+
+        Parameters
+        ----------
+        simulation : openmm.app.Simulation
+
+        Returns
+        -------
+        tuple
+            (steps, pos, vel, force, energy, volume)
+        """
+        stepsUntilNextReport = self.reportInterval - (simulation.currentStep % self.reportInterval or self.reportInterval)
+        return (stepsUntilNextReport, True, False, False, False, False)
+    
+    def report(self, simulation, state) -> None:
+        """
+        Evaluate optimal step size and softest eigenvector, and update GADES updater.
+
+        Parameters
+        ----------
+        simulation : openmm.app.Simulation
+        state : openmm.State
+        """
+        platform = simulation.context.getPlatform().getName()
+        positions = state.getPositions(asNumpy=True)
+        system = simulation.system
+
+        new_eps = self._find_valid_step_size(system, positions, platform)
+        if new_eps is not None:
+            self.gades_updater.set_hess_step_size(new_eps)
+            self.gades_updater.set_eigenvec(self.eigenvec)
+            print(f"\033[1;32m[HessianStepSizeReporter] Updated epsilon to {new_eps}\033[0m")
+        else:
+            print("\033[1;33m[HessianStepSizeReporter] No suitable epsilon found.\033[0m")
