@@ -72,6 +72,7 @@ class GADESForceUpdater(object):
         """
         self.biased_force = biased_force
         self.bias_atom_indices = bias_atom_indices
+        print(f"\033[1;32m[GADES] Biasing {len(self.bias_atom_indices)} atoms\033[0m")
         self.hess_func = hess_func
         self.clamp_magnitude = clamp_magnitude
         if interval < 100:
