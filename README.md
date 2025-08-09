@@ -64,6 +64,7 @@ The parameters of `GADESForceUpdater` are:
 * `stability_interval`: Intervals at which stability checks are performed to ensure system stability. We suggest a setting this to `interval`//2 or smaller.
 * `logfile_prefix`: Prefix for the log files created by GADES. `None` would skip logging the most negative eigenvalue, the corresponding eigenvector, and the current location on the potential energy surface at each update interval.
 
-There is an example script available in `examples/BluePrint/sys_example.py`
+There is an example script available in `examples/BluePrint/sys_example.py`.
+
 ### Disclaimer
 This repo is still under active development.
