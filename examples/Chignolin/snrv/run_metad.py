@@ -5,7 +5,7 @@ import os
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 sys.path.insert(0, os.path.join(repo_root, 'GADES'))
 # -----------------------------SIMULATION PARAMETERS----------------------------
-NSTEPS = 1e6
+NSTEPS = 5e6
 PLATFORM = "CUDA"
 
 # ---------------------------------USER SYSTEM DEF------------------------------
@@ -45,7 +45,7 @@ cv1 = app.BiasVariable(
     10000,
     biasWidth=100,
     periodic=False,
-    gridWidth=1000,
+    gridWidth=500,
 )
 
 cv2_force = TorchForce(f"cv2.pt")
@@ -56,7 +56,7 @@ cv2 = app.BiasVariable(
     10000,
     biasWidth=100,
     periodic=False,
-    gridWidth=1000,
+    gridWidth=500,
 )
 
 meta = app.Metadynamics(

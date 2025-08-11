@@ -1,0 +1,21 @@
+; SUL_GMX.top created by acpype (v: 2023.10.27) on Mon Aug  4 12:25:37 2025
+
+; Include AMBER
+#include "toppar/forcefield.itp"
+
+; Include SUL_GMX.itp topology
+#include "toppar/SUL_GMX.itp"
+
+; Include ions.itp
+#include "toppar/ions.itp"
+
+; Include tip3p water topology
+#include "toppar/tip3p.itp"
+
+[ system ]
+SUL in water
+
+[ molecules ]
+; Compound        nmols
+ SUL              1     
+SOL              1162
