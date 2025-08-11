@@ -6,12 +6,12 @@ from joblib import Parallel, delayed
 import openmm
 
 
-#@jit
+@jit
 def muller_brown_potential_base(x):
     """
     2D Muller-Brown potential.
 
-    Args:
+    Args:`
         x (jax.ndarray): (2, ) vector of x0 and x1
 
     Returns:
