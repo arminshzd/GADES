@@ -1,0 +1,89 @@
+* Generate Ligand 
+*
+
+DIMENS CHSIZE 2000000
+!DIMENS CHSIZE 1000000
+
+! read topology and parameter files
+stream toppar.str
+
+bomlev -1
+
+! Generate sequence
+read sequence ATP 1
+generate ATP first none last none setup
+
+open read card unit 10 name upload.crd
+read coor card unit 10
+bomlev 0
+
+define fixed sele ( INIT ) .and. ( .not. hydrogen ) end
+
+!Print heavy atoms with unknown coordinates
+coor print sele ( .not. INIT ) .and. ( .not. hydrogen ) end
+
+
+ic param
+ic build
+define LONEPAIR sele chem LPH end
+if ?nsel .gt. 0 coor shake sele LONEPAIR end
+coor print sele ( .not. INIT ) .and. ( .not. hydrogen ) end
+
+! try IC GENERATE  if there are unknown coordinate
+define XXX sele .not. INIT show end
+if ?nsel .gt. 0 then
+   ic generate
+   ic param
+   ic build
+   define LONEPAIR sele chem LPH end
+   if ?nsel .gt. 0 coor shake sele LONEPAIR end
+   prnlev 0
+   hbuild sele hydr end
+   prnlev 5
+   coor print
+
+   cons fix sele fixed end
+   mini sd nstep 50
+   cons fix sele none end
+endif
+
+if ?nsel .eq. 0 then
+   prnlev 0
+   hbuild sele hydr end
+   prnlev 5
+   coor print
+endif
+
+mini sd nstep 50
+
+
+! stop if there are unknown coordinate
+define XXX sele .not. INIT show end
+if ?nsel .gt. 0 stop
+
+ENERGY
+
+open write card unit 10 name ligandrm.pdb
+write coor pdb  unit 10 official
+
+open write card unit 10 name ligandrm.crd
+write coor unit 10 card
+
+open write unit 10 card name ligandrm.psf
+write psf  unit 10 card
+
+coor stat sele all end
+
+open write unit 90 card name ligandrm.str
+write title unit 90
+* set ncharge = ?cgtot
+* set xmax = ?xmax
+* set ymax = ?ymax
+* set zmax = ?zmax
+* set xmin = ?xmin
+* set ymin = ?ymin
+* set zmin = ?zmin
+*
+
+stop
+
