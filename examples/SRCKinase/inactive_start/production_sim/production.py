@@ -42,7 +42,7 @@ LOG_PREFIX = "2src"
 PLATFORM = "OpenCL"
 
 # ---------------------------------USER SYSTEM DEF------------------------------
-directory = '/home/siddarthachar/gad-linux/achar_examples/SRCKinase_gad/initial/'
+directory = '../'
 
 gro = load_file(directory + '2src_npt.gro')
 top = load_file(directory + 'topol.top')
