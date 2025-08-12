@@ -1,0 +1,1 @@
+Two starting points for SRC Kinase, active and inactive. Inactive is the most stable state. Simulation files are provided for both. `production_sim` has the python script to run OpenMM simulations. 
