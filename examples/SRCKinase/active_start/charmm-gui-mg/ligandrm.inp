@@ -1,0 +1,55 @@
+* Generate Ligand 
+*
+
+DIMENS CHSIZE 2000000
+!DIMENS CHSIZE 1000000
+
+! read topology and parameter files
+stream toppar.str
+
+bomlev -1
+
+! Generate sequence
+read sequence MG 1
+generate MG first none last none setup
+
+open read card unit 10 name upload.crd
+read coor card unit 10
+bomlev 0
+
+define fixed sele ( INIT ) .and. ( .not. hydrogen ) end
+
+!Print heavy atoms with unknown coordinates
+coor print sele ( .not. INIT ) .and. ( .not. hydrogen ) end
+
+
+! stop if there are unknown coordinate
+define XXX sele .not. INIT show end
+if ?nsel .gt. 0 stop
+
+ENERGY
+
+open write card unit 10 name ligandrm.pdb
+write coor pdb  unit 10 official
+
+open write card unit 10 name ligandrm.crd
+write coor unit 10 card
+
+open write unit 10 card name ligandrm.psf
+write psf  unit 10 card
+
+coor stat sele all end
+
+open write unit 90 card name ligandrm.str
+write title unit 90
+* set ncharge = ?cgtot
+* set xmax = ?xmax
+* set ymax = ?ymax
+* set zmax = ?zmax
+* set xmin = ?xmin
+* set ymin = ?ymin
+* set zmin = ?zmin
+*
+
+stop
+

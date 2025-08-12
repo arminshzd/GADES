@@ -1,0 +1,32 @@
+---
+title: null
+compound: null
+expdata: null
+crystal:
+  operator: [ ]
+  geometry:
+    a: 73.580
+    b: 76.280
+    c: 80.580
+    alpha: 90.00
+    beta: 90.00
+    gamma: 90.00
+    p: P
+    p1: 1
+    p2: null
+    p3: null
+    space_group:
+      - P
+      - 1
+      - null
+      - null
+    type: ORTHorhombic
+biomat_data: null
+ssbonds: [ ]
+missing_residue: [ ]
+exit_token:
+  - MODEL
+  - 'ATOM '
+  - HETAT
+ubqs: [ ]
+format: CHARMM

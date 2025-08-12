@@ -1,0 +1,5 @@
+REMARK  GENERATE LIGAND                                                               
+REMARK   DATE:     4/ 4/25     15:21:32      CREATED BY USER: charmm-gui              
+ATOM      1  MG  MG  M   1       0.000   0.000   0.000  1.00  0.00      MG  
+TER       2      MG       1
+END

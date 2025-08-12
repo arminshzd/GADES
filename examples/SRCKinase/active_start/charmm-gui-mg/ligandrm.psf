@@ -1,0 +1,38 @@
+PSF EXT CMAP XPLOR
+
+         2 !NTITLE
+* GENERATE LIGAND                                                               
+*  DATE:     4/ 4/25     15:21:32      CREATED BY USER: charmm-gui              
+
+         1 !NATOM
+         1 MG       1        MG       MG       MG        2.00000       24.3050           0
+
+         0 !NBOND: bonds
+
+
+         0 !NTHETA: angles
+
+
+         0 !NPHI: dihedrals
+
+
+         0 !NIMPHI: impropers
+
+
+         0 !NDON: donors
+
+
+         0 !NACC: acceptors
+
+
+         0 !NNB
+
+         0
+
+         1         0 !NGRP NST2
+         0         2         0
+
+         0         0 !NUMLP NUMLPH
+
+         0 !NCRTERM: cross-terms
+
