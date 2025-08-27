@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Gentlest Ascent Dynamics for Enhanced Sampling"
 authors = [
     { name = "Armin Shayesteh Zadeh", email = "arminshzd@gmail.com"},
-    { name = "Siddarth Achar", email = ""}
+    { name = "Siddarth Achar", email = "arminshzd@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.9"
