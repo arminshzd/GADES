@@ -1,13 +1,8 @@
 # ---------------------------------MODULE IMPORTS-------------------------------
-import sys
 import os
 
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, os.path.join(repo_root, 'GADES'))
-
-from utils import compute_hessian_force_fd_richardson as hessian
-from gades import getGADESBiasForce
-from gades import GADESForceUpdater
+from GADES.utils import compute_hessian_force_fd_richardson as hessian
+from GADES import getGADESBiasForce, GADESForceUpdater
 
 # -----------------------------SIMULATION PARAMETERS----------------------------
 NSTEPS = 1e6

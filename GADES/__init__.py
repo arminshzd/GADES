@@ -1,5 +1,6 @@
-from .gades import GADESForceUpdater
+from .gades import GADESForceUpdater, getGADESBiasForce
 
 __all__ = [
     "GADESForceUpdater",
+    "getGADESBiasForce"
 ]
