@@ -3,7 +3,7 @@ import atexit
 import numpy as np
 from openmm import CustomExternalForce, unit, CMMotionRemover
 
-from utils import clamp_force_magnitudes as fclamp
+from .utils import clamp_force_magnitudes as fclamp
 
 def getGADESBiasForce(n_particles):
     """

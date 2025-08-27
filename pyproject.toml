@@ -21,3 +21,9 @@ dependencies = [
     "openmm",
     "joblib"
 ]
+
+[tool.setuptools.packages.find]
+# Only include your package
+include = ["GADES*"]
+# Exclude non-packages / clutter
+exclude = ["imgs*", "tests*", "examples*"]
