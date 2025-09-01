@@ -29,7 +29,9 @@ pip install -e .
 
 ## Usage
 
-GADES is prepared as a drop-in plugin to the OpenMM molecular dynamics package. To use GADES:
+GADES is prepared as a drop-in plugin to the OpenMM molecular dynamics package. Find the API documentation and working examples on the [documentations](https://arminshzd.github.io/GADES/) website.
+
+To use GADES:
 
 1) Import the hessian calculation method and the Force biasing method `getGADESBiasForce`:
 
