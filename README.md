@@ -1,4 +1,4 @@
-![GADES](/imgs/GADES_logo.png)
+![GADES](/docs/docs/imgs/GADES_logo_wbg.png)
 
 # GADES
 
@@ -13,11 +13,20 @@ to install, clone the repository
 git clone https://github.com/arminshzd/GADES.git
 ```
 
+create a conda environment
+
+``` bash
+(python >= 3.10)
+conda create -n GADES python=3.10
+conda activate GADES
+```
+
 and install from inside the `GADES` directory using `pip`
 
 ``` bash
 pip install -e .
 ```
+
 ## Usage
 
 GADES is prepared as a drop-in plugin to the OpenMM molecular dynamics package. To use GADES:
@@ -67,4 +76,5 @@ The parameters of `GADESForceUpdater` are:
 There is an example script available in `examples/BluePrint/sys_example.py`.
 
 ### Disclaimer
+
 This repo is still under active development.
