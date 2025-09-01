@@ -12,10 +12,9 @@ to install, clone the repository
 git clone https://github.com/arminshzd/GADES.git
 ```
 
-create a conda environment
+create a conda environment `(python >= 3.10)`
 
 ```bash
-(python >= 3.10)
 conda create -n GADES python=3.10 
 conda activate GADES
 ```
