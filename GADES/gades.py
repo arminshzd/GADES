@@ -1,16 +1,44 @@
+from typing import Sequence, Callable, Optional
 import atexit
 
 import numpy as np
+import openmm
+import openmm.app
 from openmm import CustomExternalForce, unit, CMMotionRemover
 
 from .utils import clamp_force_magnitudes as fclamp
 
-def getGADESBiasForce(n_particles):
+def getGADESBiasForce(n_particles: int) -> CustomExternalForce:
     """
-    Function to create the custom force for GADES
+    Create a custom OpenMM force object for GADES biasing.
+
+    This function constructs an OpenMM `CustomExternalForce` that applies
+    per-particle forces in the form:
+
+    $$F(x, y, z) = f_x * x + f_y * y + f_z * z$$
+
+    where `fx`, `fy`, and `fz` are per-particle parameters that can be updated
+    during a simulation. The force is assigned to group `1` so that it can be
+    easily separated from other forces in analysis or reporting.
+
+    Args:
+        n_particles (int):
+            Number of particles in the system. Each particle will be assigned
+            its own `(fx, fy, fz)` parameter set.
 
     Returns:
-        CustomExternalForce: OpenMM custom force class generated for GADES biasing
+        openmm.CustomExternalForce:
+            A `CustomExternalForce` object configured with per-particle force
+            parameters for GADES biasing.
+
+    Raises:
+        ValueError: If `n_particles` is negative.
+
+    Examples:
+        >>> from GADES import getGADESBiasForce
+        >>> system = ...
+        >>> force = GAD_force = getGADESBiasForce(system.getNumParticles())
+        >>> system.addForce(GAD_force)
     """
     force = CustomExternalForce("fx*x+fy*y+fz*z")
     force.addPerParticleParameter("fx")
@@ -23,43 +51,100 @@ def getGADESBiasForce(n_particles):
 
 
 class GADESForceUpdater(object):
-    def __init__(self, biased_force, bias_atom_indices, hess_func, clamp_magnitude, kappa, interval, stability_interval=None, logfile_prefix=None):
-        """
-        Initialize the GADESForceUpdater for periodically applying Gentlest Ascent Dynamics (GAD) bias forces.
+    def __init__(
+        self,
+        biased_force: CustomExternalForce,
+        bias_atom_indices: Sequence[int],
+        hess_func: Callable,
+        clamp_magnitude: float,
+        kappa: float,
+        interval: int,
+        stability_interval: Optional[int] = None,
+        logfile_prefix: Optional[str] = None,
+    ):
+        r"""
+        Initialize a GADESForceUpdater for applying Gentlest Ascent Dynamics (GADES) bias forces.
 
-        This class identifies the softest mode of the system (lowest eigenvalue of the Hessian),
-        constructs a directional force along that mode, and applies it to a selected set of atoms.
-        It also performs periodic stability checks and logs key diagnostic information.
+        The updater identifies the softest Hessian eigenmode of the system and constructs
+        a directional bias force along that mode using:
+        $$
+        F_{\text{GADES}} = - \kappa \, (\mathbf{F}_{\text{system}} \cdot \vec{n}) \, \vec{n},
+        $$
 
-        Parameters
-        ----------
-        biased_force : openmm.CustomExternalForce
-            The OpenMM force object to which GADES bias forces are applied (should be created using `getGADESBiasForce()`).
-        
-        bias_atom_indices : array-like of int
-            Atom indices that will receive the bias force updates.
-        
-        hess_func : callable
-            A function that returns the Hessian matrix given (system, positions, atom_indices, step_size, platform).
-        
-        clamp_magnitude : float
-            Maximum allowed magnitude for each component of the bias force; used to prevent unphysical updates.
-        
-        kappa : float
-            Scaling factor applied to the bias force along the softest mode.
-        
-        interval : int
-            Number of simulation steps between each bias force update. If set below 100, it will be internally overridden to 110.
-        
-        stability_interval : int, optional
-            Frequency (in steps) at which to perform stability checks (based on kinetic temperature).
-            If None, only post-bias stability checks are used.
-        
-        logfile_prefix : str, optional
-            If provided, enables logging of:
-                - Softest eigenvectors:    <prefix>_evec.log
-                - Corresponding eigenvalues: <prefix>_eval.log
-                - Biased atom positions:   <prefix>_biased_atoms.xyz (in XYZ format)
+        where $\vec{n}$ is normalized eigenvector corresponding to the softest mode.
+        the The bias is applied to a specified set of atoms at regular intervals,
+        with optional stability checks and logging.
+
+        Args:
+            biased_force (openmm.CustomExternalForce):
+                The OpenMM force object that will receive GADES bias forces.
+                Must be created using `getGADESBiasForce()`.
+            bias_atom_indices (Sequence[int]):
+                Indices of atoms that should receive the bias force.
+            hess_func (Callable):
+                A user-supplied function returning the Hessian matrix for the system.
+                Must accept `(system, positions, atom_indices, step_size, platform)`
+                as input and return a 2D array-like Hessian. Choose one of 
+                `GADES.utils.compute_hessian_force_fd_richardson`, 
+                `GADES.utils.compute_hessian_force_fd_block_serial`, or
+                `GADES.utils.compute_hessian_force_fd_block_parallel`. We suggest
+                the Richardson variant.
+            clamp_magnitude (float):
+                Maximum allowed magnitude for each component of the bias force,
+                used to prevent unphysical updates or exploration of irrelavant
+                regions.
+            kappa (float):
+                Scaling factor (0 < κ < 1) applied to the bias force along the
+                softest eigenmode. GADES is designed for exploration applications
+                with κ=0.9. Values larger than 1 will lead to the system lingering
+                in the transition regions. Values smaller than 0.9 limit the
+                maximum gradient GADES is able to overcome. We suggest controling
+                this with `clamp_magnitude` instead of `kappa` since `kappa` will
+                damp __all__ forces while the clamp is only effective in high-
+                gradient regions.
+            interval (int):
+                Number of simulation steps between bias force updates. Values
+                less than 100 are overridden to 110 internally to ensure stability.
+                Smaller values make for a more accurate bias direction, at the 
+                expense of computational cost. In our experience, a value of 
+                ~2000 is a good place to start.
+            stability_interval (int, optional):
+                Number of steps between stability checks based on kinetic
+                temperature. If None, only post-bias stability checks are used.
+                This check ensures that the system doesn't stray too far from 
+                the set temperature by turning the bias off if the temperature
+                rises >50 K of the simulation temeprature. We suggest a value of
+                500 steps for most simulations.
+            logfile_prefix (str, optional):
+                Prefix for log files. If provided, the following files are created:
+                  - `<prefix>_evec.log`: trajectory of softest-mode eigenvectors
+                  - `<prefix>_eval.log`: trajectory of  sorted eigenvalue spectra
+                  - `<prefix>_biased_atoms.xyz`: biased atom trajectories in XYZ format
+
+        Raises:
+            ValueError: If `interval` is not a positive integer.
+            OSError: If log files cannot be created when `logfile_prefix` is set.
+
+        Examples:
+            >>> from GADES import getGADESBiasForce, GADESForceUpdater
+            >>> from GADES.utils import compute_hessian_force_fd_richardson as hessian
+            >>> system = ...
+            >>> simulation = ...
+            >>> biasing_atom_ids = ...
+            >>> GAD_force = getGADESBiasForce(system.getNumParticles())
+            >>> GADESupdater = GADESForceUpdater(
+                                biased_force=GAD_force, 
+                                bias_atom_indices=biasing_atom_ids,
+                                hess_func=hessian, 
+                                clamp_magnitude=2500,
+                                kappa=0.9, 
+                                interval=1000, 
+                                stability_interval=500, 
+                                logfile_prefix="GADES_log"
+                                )
+            >>> simulation.reporters.append(GADESupdater)
+            >>> simulation.step(10000)
+            
         """
         self.biased_force = biased_force
         self.bias_atom_indices = bias_atom_indices
@@ -106,31 +191,88 @@ class GADESForceUpdater(object):
             self._xyz_log.flush()
             
 
-    def set_kappa(self, kappa):
+    def set_kappa(self, kappa: float) -> None:
         """
-        Update the scaling factor for the biased force.
+        Update the scaling factor κ used for the GADES bias force.
 
-        Parameters
-        ----------
-        kappa : float
-            New scaling factor.
+        This method is the setter of `kappa`, which determines how strongly
+        the bias is applied along the softest Hessian eigenmode. The new value
+        will be used in all subsequent bias updates. Note that there are no checks
+        on the provided value for `kappa` for maximum flexibility. However, 
+        GADES is designed for exploration applications with 0 < κ < 1. Stability
+        and behavior has not been tested for κ outside this range. Values larger
+        than 1 will lead to the system lingering in the transition regions. 
+        Values smaller than 0.9 limit the maximum gradient GADES is able to 
+        overcome. We suggest controling this with `clamp_magnitude` instead of 
+        `kappa` since `kappa` will damp __all__ forces while the clamp is only 
+        effective in high-gradient regions. 
+
+        Args:
+            kappa (float):
+                New scaling factor κ for the bias force.
+
+        Returns:
+            None
+
+        Examples:
+            >>> GADESupdater.set_kappa(0.8)
+            >>> print(updater.kappa)
+            0.8
         """
         self.kappa = kappa
         return None
     
-    def set_hess_step_size(self, delta):
+    def set_hess_step_size(self, delta: float) -> None:
         """
-        Update the displacement step size used in the Hessian calculation.
+        Update the displacement step size used for numerical Hessian calculations.
 
-        Parameters
-        ----------
-        delta : float
-            New displacement step size.
+        The Hessian is computed via finite-difference displacements of the
+        atomic coordinates. This method updates the step size `delta` used in
+        those displacements, which can affect both accuracy and numerical stability.
+        The Richardson method-based Hessian calculators are less prone to 
+        numerical errors due to small/large step sizes.
+
+        Args:
+            delta (float):
+                New displacement step size (in nanometers) for Hessian evaluation.
+
+        Returns:
+            None
+
+        Raises:
+            ValueError: If `delta` is not positive.
+
+        Examples:
+            >>> GADESupdater.set_hess_step_size(1e-4)
+            >>> print(updater.hess_step_size)
+            0.0001
         """
+        if delta <= 0:
+            raise ValueError("Hessian step size `delta` cannot be zero or negative.")
         self.hess_step_size = delta
         return None
     
-    def _is_stable(self, simulation):
+    def _is_stable(self, simulation: openmm.app.Simulation) -> bool:
+        """
+        Check whether the simulation is thermodynamically stable (internal use only).
+
+        This method estimates the instantaneous temperature from the system's
+        kinetic energy and compares it to the target temperature of the integrator.
+        If the deviation exceeds 50 K, the system is considered unstable.
+
+        Args:
+            simulation (openmm.app.Simulation):
+                The OpenMM Simulation object to evaluate.
+
+        Returns:
+            bool:
+                True if the instantaneous temperature is within 50 K of the
+                target temperature, False otherwise.
+
+        Notes:
+            - Degrees of freedom (DOF) are reduced by one for each constraint
+              and by three if a `CMMotionRemover` is present.
+        """
         dof = 0
         system = simulation.system
         state = simulation.context.getState(getEnergy=True)
@@ -149,19 +291,26 @@ class GADESForceUpdater(object):
             return False
         return True
     
-    def _ensure_atom_symbols(self, simulation):
+    def _ensure_atom_symbols(self, simulation: openmm.app.Simulation) -> None:
         """
-        Lazily initializes atom symbols based on the simulation topology.
+        Lazily initialize atom symbols from the simulation topology (internal use only).
 
-        Parameters
-        ----------
-        simulation : openmm.app.Simulation
-            The simulation from which to extract atom symbols.
+        This method populates `self.atom_symbols` with element symbols
+        corresponding to the atoms listed in `bias_atom_indices`. If an atom
+        lacks an associated element, it is assigned the placeholder symbol "X".
+        The initialization is performed only once; subsequent calls will be
+        no-ops if `self.atom_symbols` is already set.
 
-        Sets
-        -----
-        self.atom_symbols : list of str
-            Atomic symbols corresponding to `bias_atom_indices`.
+        Args:
+            simulation (openmm.app.Simulation):
+                The OpenMM Simulation object from which atom symbols are extracted.
+
+        Sets:
+            self.atom_symbols (list of str):
+                Atomic symbols corresponding to `bias_atom_indices`.
+
+        Returns:
+            None
         """
         if self.atom_symbols is None:
             atom_list = list(simulation.topology.atoms())
@@ -169,39 +318,37 @@ class GADESForceUpdater(object):
                 atom_list[i].element.symbol if atom_list[i].element is not None else "X"
                 for i in self.bias_atom_indices
             ]
+        return None
     
-    def _get_gad_force(self, simulation):
+    def _get_gad_force(self, simulation: openmm.app.Simulation) -> np.ndarray:
         """
-        Compute the Gentlest Ascent Dynamics (GAD) force vector and direction for a molecular system.
+        Compute the Gentlest Ascent Dynamics (GAD) biasing force (internal use only).
 
-        Parameters
-        ----------
-        sim : openmm.app.Simulation
-            The OpenMM simulation object containing the current system state.
-        bias_atom_indices : array-like
-            Indices of the atoms to which the biasing force is applied.
-        hess_func : callable
-            Function that computes the Hessian matrix given the system, positions, 
-            selected atom indices, a displacement tolerance, and platform.
-        clamp_magnitude : float
-            Maximum allowed magnitude for the biased force components; forces 
-            exceeding this will be clamped.
-        kappa : float, optional
-            Scaling factor applied to the biased force (default is 0.9).
+        This method calculates the biased force vector aligned with the softest
+        Hessian eigenmode of the system. The bias is scaled by `kappa`, clamped
+        to prevent unphysical magnitudes, and reshaped to match the force array
+        of the selected atoms. Optional logging writes eigenvectors, eigenvalues,
+        and biased atom trajectories to disk.
 
-        Returns
-        -------
-        forces_b : np.ndarray
-            The biased force vector, reshaped to match the system's position shape 
-            (typically (N_atoms, 3)).
+        Args:
+            simulation (openmm.app.Simulation):
+                The OpenMM Simulation object containing the current system state.
 
-        Notes
-        -----
-        This function computes the Hessian of the system, extracts the eigenvector 
-        associated with the smallest eigenvalue (softest mode), and constructs a 
-        biased force vector aligned with this mode. The biased force is scaled, 
-        clamped, and reshaped to match the atomic positions.
+        Returns:
+            np.ndarray:
+                The biased force array with shape `(N_bias_atoms, 3)`,
+                corresponding to the atoms in `bias_atom_indices`.
 
+        Notes:
+            - The Hessian is computed using `self.hess_func`, which must accept
+              `(system, positions, atom_indices, step_size, platform)` as arguments.
+            - The eigenvector associated with the smallest eigenvalue (softest mode)
+              is normalized and used to construct the bias direction.
+            - Forces are clamped so that the force on each particle does not exceed
+              `self.clamp_magnitude` in absolute value.
+            - If logging is enabled (`logfile_prefix` set at initialization),
+              eigenvectors, eigenvalues, and atom coordinates are written to
+              `<prefix>_evec.log`, `<prefix>_eval.log`, and `<prefix>_biased_atoms.xyz`.
         """
         state = simulation.context.getState(getPositions=True, getForces=True)
         platform = simulation.context.getPlatform().getName()
@@ -234,18 +381,38 @@ class GADESForceUpdater(object):
         
         return forces_b.reshape(forces_u.shape)
         
-    def describeNextReport(self, simulation):
+    def describeNextReport(self, simulation: openmm.app.Simulation) -> tuple[int, bool, bool, bool, bool, bool]:
         """
-        Define the interval and required data for the next report.
+        Define when the reporter should run next and what data it requires.
 
-        Parameters
-        ----------
-        simulation : openmm.app.Simulation
+        This method is required by the OpenMM `Reporter` interface and must be
+        implemented in all reporter subclasses. It determines how many steps
+        until the next reporting event and specifies which data types (positions,
+        velocities, forces, energies, volumes) are needed at that time.
 
-        Returns
-        -------
-        tuple
-            (steps until next report, pos, vel, force, energy, volume)
+        Args:
+            simulation (openmm.app.Simulation):
+                The OpenMM Simulation object providing the current step and state.
+
+        Returns:
+            tuple:
+                A 6-element tuple with the following contents:
+                  - steps (int): Number of steps until the next report.
+                  - needsPositions (bool): Always False.
+                  - needsVelocities (bool): Always False.
+                  - needsForces (bool): Always False.
+                  - needsEnergy (bool): Always False.
+                  - needsVolume (bool): Always False.
+
+        Notes:
+            - Even though this method is not part of the intended public API for
+              `GADESForceUpdater`, it must remain public (no leading underscore)
+              because OpenMM requires `describeNextReport` to be defined.
+            - Internally, this method:
+                * Ensures atom symbols are initialized for logging.
+                * Schedules the next bias update, stability check, or post-bias check.
+                * Sets internal flags (`is_biasing`, `check_stability`) for use in
+                  subsequent reporting steps.
         """
         step = simulation.currentStep
 
@@ -276,16 +443,58 @@ class GADESForceUpdater(object):
 
         return (steps, False, False, False, False, False)
 
-    def report(self, simulation, state):
+    def report(self, simulation: openmm.app.Simulation, 
+               state: openmm.State) -> None:
         """
-        Apply the computed biased forces at the current simulation step.
+        Apply (or remove) GADES bias forces at the current simulation step.
 
-        Parameters
-        ----------
-        simulation : openmm.app.Simulation
-            The OpenMM simulation object.
-        state : openmm.State
-            The current simulation state (unused here but required by interface).
+        This method fulfills the OpenMM `Reporter` interface requirement. It uses
+        internal scheduling flags set by `describeNextReport` to decide whether to:
+          1) perform a stability check and remove bias if unstable,
+          2) update/apply the GADES bias forces, or
+          3) do nothing this step.
+        Parameter updates are pushed to the OpenMM context when modifications occur.
+
+        Args:
+            simulation (openmm.app.Simulation):
+                The OpenMM Simulation object (provides context, step counter, etc.).
+            state (openmm.State):
+                Current simulation state. Unused here, but required by the Reporter API.
+
+        Returns:
+            None
+
+        Side Effects:
+            - Calls `_get_gad_force` to compute biased forces when `is_biasing` is True.
+            - Updates `self.biased_force` per-atom parameters and pushes them with
+              `updateParametersInContext(simulation.context)`.
+            - Clears or sets scheduling flags:
+                * `self.check_stability` → False after a stability-handling step.
+                * `self.is_biasing` → False after bias has been applied.
+                * `self.next_postbias_check_step` → set to `step + 100` after applying bias,
+                  or cleared when the scheduled post-bias check is reached.
+            - Emits informational messages to stdout about actions taken.
+
+        Internal Helpers:
+            - `remove_bias()` (internal use only):
+                Reset the per-atom bias parameters to `(0.0, 0.0, 0.0)` for all
+                `bias_atom_indices`, effectively disabling the bias.
+            - `apply_bias()` (internal use only):
+                Compute the current GADES bias via `_get_gad_force(simulation)` and set
+                per-atom parameters accordingly for all `bias_atom_indices`.
+
+        Notes:
+            - This method is typically triggered by OpenMM according to the schedule
+              returned by `describeNextReport`. It defensively calls
+              `_ensure_atom_symbols(simulation)` in case the reporter was invoked
+              before `describeNextReport`.
+            - If `self.check_stability` is True, the method first evaluates stability via
+              `_is_stable(simulation)`:
+                * If unstable (ΔT > 50 K from target), the bias is removed for safety.
+                * If stable and `self.is_biasing` is True, the bias is (re)applied and a
+                  post-bias check is scheduled in 100 steps.
+            - If neither `self.check_stability` nor `self.is_biasing` is set, the method
+              performs no action for the current step.
         """
         step = simulation.currentStep
 
@@ -329,9 +538,26 @@ class GADESForceUpdater(object):
         # If neither flag is True, do nothing
         return None
     
-    def _close_logs(self):
+    def _close_logs(self) -> None:
         """
-        Method to close the log files safely. Registered with `atexit` and called by `__del__`
+        Close all open log files associated with the updater (internal use only).
+
+        This method ensures that any log files opened during initialization are
+        properly closed. It is registered with `atexit` for automatic cleanup at
+        interpreter shutdown and is also called by `__del__` as a safeguard.
+
+        Closes:
+            - `self._evec_log`: eigenvector log file (`<prefix>_evec.log`)
+            - `self._eval_log`: eigenvalue log file (`<prefix>_eval.log`)
+            - `self._xyz_log`: biased atom trajectory log file (`<prefix>_biased_atoms.xyz`)
+
+        Notes:
+            - Each file handle is checked for existence and open state before closing.
+            - Any exceptions during file closure are suppressed to avoid interfering
+              with shutdown.
+
+        Returns:
+            None
         """
         for attr in ("_evec_log", "_eval_log", "_xyz_log"):
             f = getattr(self, attr, None)
@@ -340,9 +566,14 @@ class GADESForceUpdater(object):
                     f.close()
                 except Exception:
                     pass
-    
-    def __del__(self):
+        return None
+
+    def __del__(self) -> None:
         """
         Clean up the log files when the object is garbage-collected
+
+        Returns:
+            None
         """
         self._close_logs()
+        return None

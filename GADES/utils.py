@@ -1,3 +1,4 @@
+from typing import Callable, Optional, Sequence
 import numpy as np
 from jax import vmap, jit, grad, hessian, random, lax
 import jax.numpy as jnp
@@ -7,7 +8,7 @@ import openmm
 
 
 #@jit
-def muller_brown_potential_base(x):
+def muller_brown_potential_base(x: jnp.ndarray) -> float:
     """
     2D Muller-Brown potential.
 
@@ -34,7 +35,7 @@ def muller_brown_potential_base(x):
     return z
 
 @jit
-def muller_brown_potential(X):
+def muller_brown_potential(X: jnp.ndarray) -> jnp.ndarray:
     """
     `vmap` version of the Muller-Brown potential.
 
@@ -47,7 +48,7 @@ def muller_brown_potential(X):
     return vmap(muller_brown_potential_base, in_axes=(0))(X)
 
 @jit
-def muller_brown_force_base(x):
+def muller_brown_force_base(x: jnp.ndarray) -> jnp.ndarray:
     """ Muller-Brown forces at `x` calculated using AD.
 
     Args:
@@ -59,7 +60,7 @@ def muller_brown_force_base(x):
     return -grad(muller_brown_potential_base)(x)
 
 @jit
-def muller_brown_force(X):
+def muller_brown_force(X: jnp.ndarray) -> jnp.ndarray:
     """ `vmap` version of Muller-Brown forces at `X` calculated using AD.
 
     Args:
@@ -71,7 +72,7 @@ def muller_brown_force(X):
     return vmap(muller_brown_force_base, in_axes=(0))(X)
 
 @jit
-def muller_brown_hess_base(x):
+def muller_brown_hess_base(x: jnp.ndarray) -> jnp.ndarray:
     """ Muller-Brown Hessian at `x` calculated using AD.
 
     Args:
@@ -83,11 +84,11 @@ def muller_brown_hess_base(x):
     return hessian(muller_brown_potential_base)(x)
 
 @jit
-def muller_brown_hess(X):
+def muller_brown_hess(X: jnp.ndarray) -> jnp.ndarray:
     """ `vmap` version of Muller-Brown Hessian at `x` calculated using AD.
 
     Args:
-        x (jax.ndarray): (N, 2) position
+        X (jax.ndarray): (N, 2) position
 
     Returns:
         jax.ndarray: (N, 2, 2) Hessian matrix [[ddU/ddx0, ddU/dx0dx1], [ddU/dx1dx0, ddU/ddx1]]
@@ -95,12 +96,16 @@ def muller_brown_hess(X):
     return vmap(muller_brown_hess_base, in_axes=(0))(X)
 
 @jit
-def muller_brown_gad_force_base(position, kappa=0.9):
-  """ GADES forces for the Muller-Brown potential at `position` calculated using AD. Calculates the total forces, then finds the most-negative eigenvalue and the corresponding eigenvector of the Hessian and returns negative `kappa` times the force projected in the eigenvector direction as the biasing force.
+def muller_brown_gad_force_base(position: jnp.ndarray, kappa: Optional[float]=0.9) -> jnp.ndarray:
+  """ GADES forces for the Muller-Brown potential at `position` calculated using AD. 
+  Calculates the total forces, then finds the most-negative eigenvalue and 
+  the corresponding eigenvector of the Hessian and returns negative `kappa` 
+  times the force projected in the eigenvector direction as the biasing force.
 
     Args:
         position (jax.ndarray): (2, ) position
-        kappa (float): GAD intensity parameter. Determines how much of the GAD force is used for biasing. `kappa=1` is 100% and `kappa=0` is none.
+        kappa (float): GAD intensity parameter. Determines how much of the GAD 
+        force is used for biasing. `kappa=1` is 100% and `kappa=0` is none.
 
     Returns:
         jax.ndarray: (2, ) GAD bias forces vector
@@ -122,22 +127,22 @@ def muller_brown_gad_force_base(position, kappa=0.9):
 ### Plotting helper functions
 
 @jit
-def muller_brown_potential_plot(x, y):
+def muller_brown_potential_plot(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
     return vmap(lambda yi: vmap(lambda xi: muller_brown_potential_base([xi, yi]))(x))(y)
 
 @jit
-def muller_brown_force_plot(x, y):
+def muller_brown_force_plot(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
     return vmap(lambda yi: vmap(lambda xi: muller_brown_force_base(jnp.asarray([xi, yi])))(x))(y)
 
 @jit
-def muller_brown_hessian_plot(x, y):
+def muller_brown_hessian_plot(x: jnp.ndarray, y: jnp.ndarray) -> jnp.ndarray:
     # `jax.numpy` supports broadcasting, so this works naturally over grids
     return vmap(lambda yi: vmap(lambda xi: muller_brown_hess_base(jnp.asarray([xi, yi])))(x))(y)
 
 ### 
 
 @jit
-def null_force(X):
+def null_force(X: jnp.ndarray) -> jnp.ndarray:
     """
     Helper function for return Null forces. Used for unbiased runs.
 
@@ -150,7 +155,8 @@ def null_force(X):
     return jnp.zeros_like(X)
 
 @jit
-def inverse_power_iteration(A, mu=0., num_iters=100, tol=1e-6):
+def inverse_power_iteration(A: jnp.ndarray, mu:callable[float]=0.,
+                            num_iters:callable[int]=100, tol:callable[float]=1e-6) -> tuple[float, jnp.ndarray]:
     """
     Computes the smallest eigenvalue and eigenvector of a matrix using inverse power iteration.
 
@@ -202,8 +208,13 @@ def inverse_power_iteration(A, mu=0., num_iters=100, tol=1e-6):
 
     return eigenvalue, b_k
 
-def baoab_langevin_integrator(positions, velocities, forces_u, forces_b, mass, gamma, dt, kBT, force_function_u, force_function_b, n_steps=1):
-    """
+def baoab_langevin_integrator(positions: jnp.ndarray, velocities: jnp.ndarray, 
+                              forces_u: jnp.ndarray, forces_b: jnp.ndarray, 
+                              mass: float, gamma: float, dt:float, 
+                              kBT:float, force_function_u: Callable, 
+                              force_function_b: Callable, 
+                              n_steps:callable[int]=1) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    r"""
     BAOAB Langevin integrator based on Leimkuhler and Matthews (2013).
     https://dx.doi.org/10.1093/amrx/abs010
 
@@ -258,7 +269,7 @@ def baoab_langevin_integrator(positions, velocities, forces_u, forces_b, mass, g
 
     return positions, velocities, forces_u, forces_b
 
-def get_hessian_fdiff(func, x0, epsilon=1e-6):
+def get_hessian_fdiff(func: Callable, x0: np.ndarray, epsilon:Optional[float]=1e-6) -> np.ndarray:
     """
     Compute the Hessian matrix of a scalar function using finite differences.
 
@@ -283,7 +294,8 @@ def get_hessian_fdiff(func, x0, epsilon=1e-6):
     return hessian_matrix
 
 
-def central_diff_ij(func, x0, i, j, epsilon):
+def central_diff_ij(func: Callable, x0: np.ndarray,
+                    i: int, j: int, epsilon: float) -> tuple[int, int, np.ndarray]:
     x_ijp = x0.copy()
     x_ijm = x0.copy()
     x_ipj = x0.copy()
@@ -309,7 +321,9 @@ def central_diff_ij(func, x0, i, j, epsilon):
     hess_ij = (f_ijp - f_ijm - f_ipj + f_imj) / (4 * epsilon**2)
     return (i, j, hess_ij)
 
-def get_hessian_cdiff_parallel(func, x0, epsilon=1e-5, n_jobs=-1):
+def get_hessian_cdiff_parallel(func: Callable, x0: np.ndarray, 
+                               epsilon:Optional[float]=1e-5, 
+                               n_jobs:int=-1) -> np.ndarray:
     n = len(x0)
     tasks = [(i, j) for i in range(n) for j in range(i, n)]
 
@@ -324,26 +338,93 @@ def get_hessian_cdiff_parallel(func, x0, epsilon=1e-5, n_jobs=-1):
 
     return hessian
 
-def _get_openMM_forces(context, positions):
-    context.setPositions(positions)
-    state = context.getState(getForces=True, groups={0}) # the `groups` keyword makes sure we're only capturing the forces from the original pmf and not the biased one.
-    forces = state.getForces(asNumpy=True).value_in_unit(openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
-    return -forces.flatten()
-
-def compute_hessian_force_fd_block_parallel(system, positions, atom_indices, epsilon=1e-4, n_jobs=-1, platform_name='CPU'):
+def _get_openMM_forces(context: openmm.Context,
+                       positions: openmm.unit.Quantity) -> np.ndarray:
     """
-    Compute square Hessian block (3M x 3M) for selected atoms only.
+    Compute the original (unbiased) forces from an OpenMM context (internal use only).
 
-    Parameters:
-    - atom_indices: list of atom indices (0-based).
-    - system: OpenMM System.
-    - positions: OpenMM Quantity array (nanometers).
-    - epsilon: finite difference step.
-    - n_jobs: number of parallel workers.
-    - platform_name: 'CPU' or 'CUDA'.
+    This function updates the context with the provided positions, then retrieves
+    forces from force group `0` only. Group `0` is assumed to correspond to the
+    system's original potential (e.g., the PMF) without additional bias terms.
+    The forces are converted to units of kJ/mol/nm and flattened into a 1D array.
+
+    Args:
+        context (openmm.Context):
+            The OpenMM context containing the current system and integrator state.
+        positions (openmm.unit.Quantity):
+            Atomic positions, shaped `(N, 3)` with distance units compatible with OpenMM.
 
     Returns:
-    - Symmetric Hessian block (3M x 3M).
+        np.ndarray:
+            Flattened force vector of shape `(3 * N,)`, in units of kJ/mol/nm.
+
+    Notes:
+        - By restricting to `groups={0}`, the returned forces exclude any
+          externally applied bias forces (e.g., from GADES).
+    """
+    context.setPositions(positions)
+    # the `groups` keyword makes sure we're only capturing the forces from the 
+    # original pmf and not the biased one.
+    state = context.getState(getForces=True, groups={0})
+    forces = state.getForces(asNumpy=True).value_in_unit(
+        openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
+    return -forces.flatten()
+
+def compute_hessian_force_fd_block_parallel(system: openmm.System,
+                                            positions: openmm.unit.Quantity,
+                                            atom_indices: Sequence[int], 
+                                            epsilon:Optional[float]=1e-4, 
+                                            n_jobs:Optional[int]=-1, 
+                                            platform_name:Optional[str]='CPU') -> np.ndarray:
+    """
+    Compute the Hessian block for a subset of atoms via finite-difference forces.
+
+    This function builds the Hessian matrix (second derivatives of the potential
+    energy with respect to Cartesian coordinates) for a selected set of atoms.
+    The calculation perturbs each coordinate by a small displacement and computes
+    the corresponding force differences in parallel. This is the parallel version
+    of `compute_hessian_force_fd_block_serial`. The performance gain of the parallel
+    version is minimal for systems with <10000 biased particles. Because of `joblib`
+    overhead, this method is in fact __slower__ than the serial version for small
+    systems.
+
+    Args:
+        system (openmm.System):
+            The OpenMM system object defining particles, interactions, and forces.
+        positions (openmm.unit.Quantity):
+            Atomic positions with shape `(N, 3)`, in units of nanometers.
+        atom_indices (Sequence[int] or None):
+            Indices of atoms to include in the Hessian block. If None, all atoms
+            are included.
+        epsilon (float, optional):
+            Finite-difference displacement step size (in nanometers).
+            Default is `1e-4`.
+        n_jobs (int, optional):
+            Number of parallel workers for finite-difference force evaluations.
+            Default is `-1` (use all available cores).
+        platform_name (str, optional):
+            OpenMM platform to use for evaluations (e.g., `"CPU"`, `"CUDA"`).
+            Default is `"CPU"`.
+
+    Returns:
+        np.ndarray:
+            A symmetric Hessian block matrix of shape `(3M, 3M)`, where `M` is
+            the number of atoms in `atom_indices`. Units are kJ/(mol·nm²).
+
+    Notes:
+        - The Hessian is computed column by column using finite-difference forces:
+          ```
+          H_ij = ∂²V / (∂x_i ∂x_j)
+          ```
+        - Parallelization is handled with `joblib.Parallel`.
+        - The final matrix is symmetrized to mitigate finite-difference noise.
+
+    Examples:
+        >>> hess_block = compute_hessian_force_fd_block_parallel(
+        ...     system, positions, atom_indices=[0, 1, 2], epsilon=1e-4, n_jobs=4
+        ... )
+        >>> hess_block.shape
+        (9, 9)
     """
     n_atoms = len(positions)
     positions_array = np.asarray(positions.value_in_unit(openmm.unit.nanometer))
@@ -397,19 +478,55 @@ def compute_hessian_force_fd_block_parallel(system, positions, atom_indices, eps
 
     return hessian_block
 
-def compute_hessian_force_fd_block_serial(system, positions, atom_indices, epsilon=1e-4, platform_name='CPU'):
+def compute_hessian_force_fd_block_serial(system: openmm.System,
+                                          positions: openmm.unit.Quantity,
+                                          atom_indices: Sequence[int], 
+                                          epsilon: Optional[float]=1e-4, 
+                                          platform_name: Optional[str]='CPU') -> np.ndarray:
     """
-    Compute square Hessian block (3M x 3M) for selected atoms (serial, non-parallel).
+    Compute the Hessian block for a subset of atoms via finite-difference forces (serial version).
 
-    Parameters:
-    - system: OpenMM System.
-    - positions: OpenMM Quantity array (nanometers).
-    - atom_indices: list of atom indices (0-based) to compute block for.
-    - epsilon: finite difference step.
-    - platform_name: 'CPU' or 'CUDA'.
+    This function constructs the Hessian matrix (second derivatives of the potential
+    energy with respect to Cartesian coordinates) for a selected set of atoms. The
+    calculation perturbs each coordinate one at a time and computes the corresponding
+    force differences, without parallelization. Use this version for system with
+    <10000 biased atoms.
+
+    Args:
+        system (openmm.System):
+            The OpenMM system object defining particles, interactions, and forces.
+        positions (openmm.unit.Quantity):
+            Atomic positions with shape `(N, 3)`, in units of nanometers.
+        atom_indices (Sequence[int] or None):
+            Indices of atoms to include in the Hessian block. If None, all atoms
+            are included.
+        epsilon (float, optional):
+            Finite-difference displacement step size (in nanometers).
+            Default is `1e-4`.
+        platform_name (str, optional):
+            OpenMM platform to use for evaluations (e.g., `"CPU"`, `"CUDA"`).
+            Default is `"CPU"`.
 
     Returns:
-    - Symmetric Hessian block (3M x 3M).
+        np.ndarray:
+            A symmetric Hessian block matrix of shape `(3M, 3M)`, where `M` is
+            the number of atoms in `atom_indices`. Units are kJ/(mol·nm²).
+
+    Notes:
+        - The Hessian is computed column by column using finite-difference forces:
+          ```
+          H_ij = ∂²V / (∂x_i ∂x_j)
+          ```
+        - This serial implementation is simpler but slower than the parallel
+          version (`compute_hessian_force_fd_block_parallel`) for large systems.
+        - The final matrix is symmetrized to mitigate finite-difference noise.
+
+    Examples:
+        >>> hess_block = compute_hessian_force_fd_block_serial(
+        ...     system, positions, atom_indices=[0, 1], epsilon=1e-4
+        ... )
+        >>> hess_block.shape
+        (6, 6)
     """
     n_atoms = len(positions)
     positions_array = positions.value_in_unit(openmm.unit.nanometer)
@@ -456,21 +573,68 @@ def compute_hessian_force_fd_block_serial(system, positions, atom_indices, epsil
 
     return hessian_block
 
-def compute_hessian_force_fd_richardson(system, positions, atom_indices, epsilon=1e-4, platform_name='CPU', factors=None):
+def compute_hessian_force_fd_richardson(system: openmm.System, 
+                                        positions: openmm.unit.Quantity, 
+                                        atom_indices: Sequence[int], 
+                                        epsilon: Optional[float]=1e-4, 
+                                        platform_name: Optional[str]='CPU', 
+                                        factors: Optional[Sequence[float]]=None) -> np.ndarray:
     """
-    Compute Hessian block using recursive Richardson extrapolation over arbitrary step sizes.
+    Compute the Hessian block for a subset of atoms using Richardson-extrapolated
+    finite differences.
 
-    Parameters:
-    - system: OpenMM System.
-    - positions: OpenMM Quantity array (nanometers).
-    - atom_indices: list of atom indices (0-based) to compute block for.
-    - epsilon: base finite difference step.
-    - platform_name: 'CPU' or 'CUDA'.
-    - factors: list of step size scaling factors (e.g., [1.0, 0.5, 0.25]). Must be decreasing.
+    This method estimates second derivatives of the potential energy by
+    recursively applying Richardson extrapolation to finite-difference
+    force calculations at multiple step sizes. This improves accuracy
+    compared to a single-step finite-difference scheme. This is the go-to method
+    for calculating numerical Hessian for GADES. Using the Richardson extrapolation
+    drastically reduces the depency of accuracy on step size and prevents numerical
+    error.
+
+    Args:
+        system (openmm.System):
+            The OpenMM system object defining particles, interactions, and forces.
+        positions (openmm.unit.Quantity):
+            Atomic positions with shape `(N, 3)`, in units of nanometers.
+        atom_indices (Sequence[int] or None):
+            Indices of atoms to include in the Hessian block. If None, all atoms
+            are included.
+        epsilon (float, optional):
+            Base finite-difference displacement step size (in nanometers).
+            Default is `1e-4`.
+        platform_name (str, optional):
+            OpenMM platform to use for evaluations (e.g., `"CPU"`, `"CUDA"`).
+            Default is `"CPU"`.
+        factors (Sequence[float], optional):
+            Decreasing list of scaling factors for step sizes, applied to `epsilon`.
+            Must be strictly decreasing (e.g., `[1.0, 0.5, 0.25]`).
+            Default is `[1.0, 0.5, 0.25]`.
 
     Returns:
-    - Symmetric Hessian block (3M x 3M) with extrapolated accuracy.
+        np.ndarray:
+            A symmetric Hessian block matrix of shape `(3M, 3M)`, where `M` is
+            the number of atoms in `atom_indices`. Units are kJ/(mol·nm²).
+
+    Notes:
+        - The Hessian is computed column by column. For each perturbed coordinate,
+          force differences are evaluated at multiple step sizes and combined via
+          Richardson extrapolation:
+          ```
+          R(k, i) = (r * R(k-1, i+1) - R(k-1, i)) / (r - 1)
+          ```
+          where `r = h_i / h_{i+k}` is the ratio of step sizes.
+        - Using more factors generally improves accuracy, but increases cost.
+        - The final Hessian is symmetrized to reduce numerical noise.
+
+    Examples:
+        >>> hess_block = compute_hessian_force_fd_richardson(
+        ...     system, positions, atom_indices=[0, 1],
+        ...     epsilon=1e-4, factors=[1.0, 0.5, 0.25]
+        ... )
+        >>> hess_block.shape
+        (6, 6)
     """
+
     if factors is None:
         factors = [1.0, 0.5, 0.25]  # Default: up to third order
 
@@ -527,17 +691,37 @@ def compute_hessian_force_fd_richardson(system, positions, atom_indices, epsilon
     del context, integrator
     return hessian_block
 
-def clamp_force_magnitudes(forces_flat, max_force):
+def clamp_force_magnitudes(forces_flat: np.ndarray, max_force: float) -> np.ndarray:
     """
-    Clamp the magnitudes of 3D force vectors represented in a flattened array.
+    Clamp the magnitudes of 3D force vectors in a flattened array.
 
-    Parameters:
-    - forces_flat (np.ndarray): Flattened array of shape (3 * N,), where each consecutive
-                                triplet is a 3D force vector.
-    - max_force (float): Maximum allowed magnitude for each force vector.
+    This function rescales each 3D force vector so that the magnitude of the bias
+    force on each particle does not exceed `max_force`. The input is a flattened
+    array where each consecutive triplet of values corresponds to one `(fx, fy, fz)` vector.
+
+    Args:
+        forces_flat (np.ndarray):
+            Flattened array of shape `(3 * N,)`, where `N` is the number of
+            force vectors. Each consecutive triplet represents a 3D force.
+        max_force (float):
+            Maximum allowed magnitude for each force vector. Forces with
+            smaller magnitudes are unchanged.
 
     Returns:
-    - np.ndarray: Flattened array with clamped force vectors, same shape as input.
+        np.ndarray:
+            Flattened array of the same shape as `forces_flat`, where each
+            3D force vector has magnitude ≤ `max_force`.
+
+    Notes:
+        - Zero-length vectors remain unchanged.
+        - The scaling is applied independently to each force vector.
+
+    Examples:
+        >>> import numpy as np
+        >>> forces = np.array([3.0, 4.0, 0.0, 0.0, 0.0, 10.0])  # two vectors
+        >>> clamped = clamp_force_magnitudes(forces, max_force=5.0)
+        >>> clamped
+        array([3., 4., 0., 0., 0., 5.])
     """
     forces = forces_flat.reshape(-1, 3)
     magnitudes = np.linalg.norm(forces, axis=1)
