@@ -1,0 +1,60 @@
+site_name: GADES
+site_url: https://arminshzd.github.io/GADES/
+repo_url: https://github.com/arminshzd/GADES
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: custom
+  logo: imgs/GADES_favicon_b.png
+  favicon: imgs/GADES_favicon_b.png
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - toc.integrate
+    - content.code.copy
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            separate_signature: true
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            inherited_members: true
+            members_order: source
+            filters:
+              - "!^_"                  # hide private members
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.tabbed
+  - attr_list
+  - md_in_html
+  - pymdownx.arithmatex:
+      generic: true
+extra_javascript:
+  - https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js
+
+nav:
+  - Home: index.md
+  - Examples:
+    - examples/index.md
+    - Müller-Brown: examples/MB_pot.md
+    - AIB9: examples/AIB9.md
+    - Sulfadiazine: examples/sulf.md
+
+  - API:
+      - GADES: reference/GADES.md
+      - utils: reference/utils.md
