@@ -155,8 +155,8 @@ def null_force(X: jnp.ndarray) -> jnp.ndarray:
     return jnp.zeros_like(X)
 
 @jit
-def inverse_power_iteration(A: jnp.ndarray, mu:callable[float]=0.,
-                            num_iters:callable[int]=100, tol:callable[float]=1e-6) -> tuple[float, jnp.ndarray]:
+def inverse_power_iteration(A: jnp.ndarray, mu: float = 0.,
+                            num_iters: int = 100, tol: float = 1e-6) -> tuple[float, jnp.ndarray]:
     """
     Computes the smallest eigenvalue and eigenvector of a matrix using inverse power iteration.
 
@@ -213,7 +213,7 @@ def baoab_langevin_integrator(positions: jnp.ndarray, velocities: jnp.ndarray,
                               mass: float, gamma: float, dt:float, 
                               kBT:float, force_function_u: Callable, 
                               force_function_b: Callable, 
-                              n_steps:callable[int]=1) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+                              n_steps: int = 1) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     r"""
     BAOAB Langevin integrator based on Leimkuhler and Matthews (2013).
     https://dx.doi.org/10.1093/amrx/abs010
