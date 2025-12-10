@@ -370,6 +370,9 @@ def _get_openMM_forces(context: openmm.Context,
         openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
     return -forces.flatten()
 
+def _get_forces(backend, positions) -> np.ndarray:
+    return backend.get_forces(positions)
+
 def compute_hessian_force_fd_block_parallel(system: openmm.System,
                                             positions: openmm.unit.Quantity,
                                             atom_indices: Sequence[int], 
@@ -477,12 +480,17 @@ def compute_hessian_force_fd_block_parallel(system: openmm.System,
     hessian_block = 0.5 * (hessian_block + hessian_block.T)
 
     return hessian_block
-
+'''
 def compute_hessian_force_fd_block_serial(system: openmm.System,
                                           positions: openmm.unit.Quantity,
                                           atom_indices: Sequence[int], 
                                           epsilon: Optional[float]=1e-4, 
                                           platform_name: Optional[str]='CPU') -> np.ndarray:
+'''
+def compute_hessian_force_fd_block_serial(backend,
+                                          atom_indices: Sequence[int], 
+                                          epsilon: Optional[float]=1e-4, 
+                                          platform_name: Optional[str]='CPU') -> np.ndarray:    
     """
     Compute the Hessian block for a subset of atoms via finite-difference forces (serial version).
 
@@ -532,6 +540,9 @@ def compute_hessian_force_fd_block_serial(system: openmm.System,
     positions_array = positions.value_in_unit(openmm.unit.nanometer)
     positions_array = np.array(positions_array)  # Convert Vec3 list to numpy
 
+    positions_array, forces_u = backend.get_current_state()
+    n_atoms = len(positions_array)
+
     # Map atom indices to coordinate indices
     if atom_indices is None:
         atom_indices = np.arange(0, n_atoms)
@@ -572,12 +583,18 @@ def compute_hessian_force_fd_block_serial(system: openmm.System,
     del integrator
 
     return hessian_block
-
+'''
 def compute_hessian_force_fd_richardson(system: openmm.System, 
                                         positions: openmm.unit.Quantity, 
                                         atom_indices: Sequence[int], 
                                         epsilon: Optional[float]=1e-4, 
-                                        platform_name: Optional[str]='CPU', 
+                                        platform_name: Optional[str]='CPU',
+                                        factors: Optional[Sequence[float]]=None) -> np.ndarray:
+'''
+def compute_hessian_force_fd_richardson(backend, 
+                                        atom_indices: Sequence[int], 
+                                        epsilon: Optional[float]=1e-4, 
+                                        platform_name: Optional[str]='CPU',
                                         factors: Optional[Sequence[float]]=None) -> np.ndarray:
     """
     Compute the Hessian block for a subset of atoms using Richardson-extrapolated
@@ -638,9 +655,8 @@ def compute_hessian_force_fd_richardson(system: openmm.System,
     if factors is None:
         factors = [1.0, 0.5, 0.25]  # Default: up to third order
 
-    n_atoms = len(positions)
-    positions_array = positions.value_in_unit(openmm.unit.nanometer)
-    positions_array = np.array(positions_array)
+    positions_array, forces_u = backend.get_current_state()
+    n_atoms = len(positions_array)
 
     if atom_indices is None:
         atom_indices = np.arange(0, n_atoms)
@@ -652,13 +668,16 @@ def compute_hessian_force_fd_richardson(system: openmm.System,
 
     hessian_block = np.zeros((m_dof, m_dof))
 
+   
     # Create context
-    integrator = openmm.VerletIntegrator(1.0 * openmm.unit.femtoseconds)
-    platform = openmm.Platform.getPlatformByName(platform_name)
-    context = openmm.Context(system, integrator, platform)
+    #integrator = openmm.VerletIntegrator(1.0 * openmm.unit.femtoseconds)
+    #platform = openmm.Platform.getPlatformByName(platform_name)
+    #context = openmm.Context(system, integrator, platform)
 
     # Baseline force
-    f0 = _get_openMM_forces(context, positions_array * openmm.unit.nanometer)[coord_indices]
+    #f0 = _get_openMM_forces(context, positions_array * openmm.unit.nanometer)[coord_indices]
+
+    f0 = forces_u
 
     for col_idx, j in enumerate(coord_indices):
         # First, compute all finite-difference derivatives
@@ -667,7 +686,8 @@ def compute_hessian_force_fd_richardson(system: openmm.System,
             perturbed_pos = positions_array.copy().flatten()
             perturbed_pos[j] += factor * epsilon
             perturbed_pos = perturbed_pos.reshape((-1, 3)) * openmm.unit.nanometer
-            f = _get_openMM_forces(context, perturbed_pos)[coord_indices]
+            #f = _get_openMM_forces(context, perturbed_pos)[coord_indices]
+            f = backend.get_forces(perturbed_pos) 
             d = (f - f0) / (factor * epsilon)
             D.append(d)
 
@@ -688,7 +708,7 @@ def compute_hessian_force_fd_richardson(system: openmm.System,
     # Symmetrize
     hessian_block = 0.5 * (hessian_block + hessian_block.T)
 
-    del context, integrator
+    #del context, integrator
     return hessian_block
 
 def clamp_force_magnitudes(forces_flat: np.ndarray, max_force: float) -> np.ndarray:

@@ -7,6 +7,11 @@ import openmm.app
 from openmm import CustomExternalForce, unit, CMMotionRemover
 
 from .utils import clamp_force_magnitudes as fclamp
+from .backend import OpenMMBackend, ASEBackend
+
+class Sampling(object):
+    def __init__(self, backend):
+        self.backend = backend
 
 def getGADESBiasForce(n_particles: int) -> CustomExternalForce:
     """
@@ -50,7 +55,7 @@ def getGADESBiasForce(n_particles: int) -> CustomExternalForce:
     return force
 
 
-class GADESForceUpdater(object):
+class GADESForceUpdater(Sampling):
     def __init__(
         self,
         biased_force: CustomExternalForce,
@@ -164,6 +169,8 @@ class GADESForceUpdater(object):
         # post bias update check
         self.next_postbias_check_step = None
 
+        self.atom_symbols = None
+
         # logging
         self.atom_symbols = None
         self.logfile_prefix = logfile_prefix
@@ -252,7 +259,7 @@ class GADESForceUpdater(object):
         self.hess_step_size = delta
         return None
     
-    def _is_stable(self, simulation: openmm.app.Simulation) -> bool:
+    def _is_stable(self) -> bool:
         """
         Check whether the simulation is thermodynamically stable (internal use only).
 
@@ -273,25 +280,11 @@ class GADESForceUpdater(object):
             - Degrees of freedom (DOF) are reduced by one for each constraint
               and by three if a `CMMotionRemover` is present.
         """
-        dof = 0
-        system = simulation.system
-        state = simulation.context.getState(getEnergy=True)
-        for i in range(system.getNumParticles()):
-            if system.getParticleMass(i) > 0*unit.dalton:
-                dof += 3
-        for i in range(system.getNumConstraints()):
-            p1, p2, distance = system.getConstraintParameters(i)
-            if system.getParticleMass(p1) > 0*unit.dalton or system.getParticleMass(p2) > 0*unit.dalton:
-                dof -= 1
-        if any(type(system.getForce(i)) == CMMotionRemover for i in range(system.getNumForces())):
-            dof -= 3
-        temperature = (2*state.getKineticEnergy()/(dof*unit.MOLAR_GAS_CONSTANT_R)).value_in_unit(unit.kelvin)
-        target_temperature = simulation.integrator.getTemperature().value_in_unit(unit.kelvin)
-        if abs(temperature - target_temperature) > 50:
-            return False
-        return True
+        return self.backend.is_stable()
     
-    def _ensure_atom_symbols(self, simulation: openmm.app.Simulation) -> None:
+    
+    
+    def _ensure_atom_symbols(self) -> None:
         """
         Lazily initialize atom symbols from the simulation topology (internal use only).
 
@@ -312,13 +305,8 @@ class GADESForceUpdater(object):
         Returns:
             None
         """
-        if self.atom_symbols is None:
-            atom_list = list(simulation.topology.atoms())
-            self.atom_symbols = [
-                atom_list[i].element.symbol if atom_list[i].element is not None else "X"
-                for i in self.bias_atom_indices
-            ]
-        return None
+        self.backend.get_atom_symbols(self.atom_symbols)
+        
     
     def _get_gad_force(self, simulation: openmm.app.Simulation) -> np.ndarray:
         """
@@ -350,6 +338,8 @@ class GADESForceUpdater(object):
               eigenvectors, eigenvalues, and atom coordinates are written to
               `<prefix>_evec.log`, `<prefix>_eval.log`, and `<prefix>_biased_atoms.xyz`.
         """
+        positions, forces_u = self.backend.get_current_state()
+
         state = simulation.context.getState(getPositions=True, getForces=True)
         platform = simulation.context.getPlatform().getName()
         forces_u = state.getForces(asNumpy=True)[self.bias_atom_indices, :]
