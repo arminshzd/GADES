@@ -58,6 +58,7 @@ def getGADESBiasForce(n_particles: int) -> CustomExternalForce:
 class GADESForceUpdater(Sampling):
     def __init__(
         self,
+        backend,
         biased_force: CustomExternalForce,
         bias_atom_indices: Sequence[int],
         hess_func: Callable,
@@ -151,6 +152,7 @@ class GADESForceUpdater(Sampling):
             >>> simulation.step(10000)
             
         """
+        self.backend = backend
         self.biased_force = biased_force
         self.bias_atom_indices = bias_atom_indices
         self.hess_func = hess_func
@@ -371,7 +373,7 @@ class GADESForceUpdater(Sampling):
         
         return forces_b.reshape(forces_u.shape)
         
-    def describeNextReport(self, simulation: openmm.app.Simulation) -> tuple[int, bool, bool, bool, bool, bool]:
+    def describeNextReport(self, backend) -> tuple[int, bool, bool, bool, bool, bool]:
         """
         Define when the reporter should run next and what data it requires.
 
@@ -404,10 +406,10 @@ class GADESForceUpdater(Sampling):
                 * Sets internal flags (`is_biasing`, `check_stability`) for use in
                   subsequent reporting steps.
         """
-        step = simulation.currentStep
+        step = self.backend.get_currentStep()
 
         # Extract atom symbols on the first call for logging
-        self._ensure_atom_symbols(simulation)
+        self._ensure_atom_symbols()
 
         # Compute time to each type of report
         steps_to_check = (
