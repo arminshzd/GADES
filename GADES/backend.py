@@ -51,13 +51,8 @@ class OpenMMBackend(Backend):
     def get_currentStep(self):
         return self.simulation.currentStep
 
-    def get_atom_symbols(self, atom_symbols: list):
-        if atom_symbols is None:
-            atom_list = list(self.simulation.topology.atoms())
-            self.atom_symbols = [
-                atom_list[i].element.symbol if atom_list[i].element is not None else "X"
-                for i in self.bias_atom_indices
-            ]
+    def get_atoms(self):
+        return self.simulation.topology.atoms()
 
     def get_current_state(self):
         state = self.simulation.context.getState(getPositions=True, getForces=True)

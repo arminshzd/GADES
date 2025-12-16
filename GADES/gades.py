@@ -307,7 +307,12 @@ class GADESForceUpdater(Sampling):
         Returns:
             None
         """
-        self.backend.get_atom_symbols(self.atom_symbols)
+        if self.atom_symbols is None:
+            atom_list = list(self.backend.get_atoms())
+            self.atom_symbols = [
+                atom_list[i].element.symbol if atom_list[i].element is not None else "X"
+                for i in self.bias_atom_indices
+            ]
         
     
     def _get_gad_force(self, simulation: openmm.app.Simulation) -> np.ndarray:
@@ -489,7 +494,7 @@ class GADESForceUpdater(Sampling):
               performs no action for the current step.
         """
         step = simulation.currentStep
-
+        print(f"\033[1;34m[GADES | step {step}] Reporter invoked.\033[0m", flush=True)
         # Defensive fallback in case describeNextReport hasn't been called yet
         self._ensure_atom_symbols(simulation)
 
