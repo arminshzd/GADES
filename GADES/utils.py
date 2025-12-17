@@ -593,7 +593,7 @@ def compute_hessian_force_fd_block_serial(backend,
 
 def compute_hessian_force_fd_richardson(backend, 
                                         atom_indices: Sequence[int], 
-                                        epsilon: Optional[float]=1e-4, 
+                                        step_size: Optional[float]=1e-4, 
                                         platform_name: Optional[str]='CPU',
                                         factors: Optional[Sequence[float]]=None) -> np.ndarray:
     """
@@ -614,7 +614,7 @@ def compute_hessian_force_fd_richardson(backend,
         atom_indices (Sequence[int] or None):
             Indices of atoms to include in the Hessian block. If None, all atoms
             are included.
-        epsilon (float, optional):
+        step_size (float, optional):
             Base finite-difference displacement step size (in nanometers).
             Default is `1e-4`.
         platform_name (str, optional):
@@ -665,7 +665,7 @@ def compute_hessian_force_fd_richardson(backend,
     m_dof = len(coord_indices)
 
     hessian_block = np.zeros((m_dof, m_dof))
-   
+
     # Create context
     #integrator = openmm.VerletIntegrator(1.0 * openmm.unit.femtoseconds)
     #platform = openmm.Platform.getPlatformByName(platform_name)
@@ -674,22 +674,26 @@ def compute_hessian_force_fd_richardson(backend,
     # Baseline force
     #f0 = _get_openMM_forces(context, positions_array * openmm.unit.nanometer)[coord_indices]
 
-    f0 = forces_u[coord_indices]
+    f0 = backend.get_forces(positions_array)
+    f0 = f0[coord_indices]
+
+    #f0 = f0.flatten()
 
     for col_idx, j in enumerate(coord_indices):
         # First, compute all finite-difference derivatives
         D = []
         for factor in factors:
             perturbed_pos = positions_array.copy().flatten()
-            perturbed_pos[j] += factor * epsilon
+            perturbed_pos[j] += factor * step_size
 
+            perturbed_pos = perturbed_pos.reshape((-1, 3))
             #perturbed_pos = perturbed_pos.reshape((-1, 3)) * openmm.unit.nanometer
             #f = _get_openMM_forces(context, perturbed_pos)[coord_indices]
 
             f = backend.get_forces(perturbed_pos)
             f = f[coord_indices]
 
-            d = (f - f0) / (factor * epsilon)
+            d = (f - f0) / (factor * step_size)
             D.append(d)
 
         # Build Richardson tableau

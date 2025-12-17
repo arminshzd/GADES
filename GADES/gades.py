@@ -315,7 +315,7 @@ class GADESForceUpdater(Sampling):
             ]
         
     
-    def _get_gad_force(self, simulation: openmm.app.Simulation) -> np.ndarray:
+    def _get_gad_force(self, backend) -> np.ndarray:
         """
         Compute the Gentlest Ascent Dynamics (GAD) biasing force (internal use only).
 
@@ -345,13 +345,17 @@ class GADESForceUpdater(Sampling):
               eigenvectors, eigenvalues, and atom coordinates are written to
               `<prefix>_evec.log`, `<prefix>_eval.log`, and `<prefix>_biased_atoms.xyz`.
         """
-        positions, forces_u = self.backend.get_current_state()
+        positions, forces = self.backend.get_current_state()
+        forces_u = forces[self.bias_atom_indices, :]
 
-        state = simulation.context.getState(getPositions=True, getForces=True)
-        platform = simulation.context.getPlatform().getName()
-        forces_u = state.getForces(asNumpy=True)[self.bias_atom_indices, :]
-        positions = state.getPositions(asNumpy=True)
-        hess = self.hess_func(simulation.system, positions, self.bias_atom_indices, self.hess_step_size, platform)
+        #state = simulation.context.getState(getPositions=True, getForces=True)
+        #platform = simulation.context.getPlatform().getName()
+        #forces_u = state.getForces(asNumpy=True)[self.bias_atom_indices, :]
+        #positions = state.getPositions(asNumpy=True)
+        platform = "CPU"
+        #hess = self.hess_func(simulation.system, positions, self.bias_atom_indices, self.hess_step_size, platform)
+        hess = self.hess_func(self.backend, self.bias_atom_indices, self.hess_step_size, platform,)
+
         w, v = np.linalg.eigh(hess)
         w_sorted = w.argsort()
         n = v[:, w_sorted[0]]
@@ -360,22 +364,23 @@ class GADESForceUpdater(Sampling):
         # clamping biased forces so their abs value is never larger than `clamp_magnitude`
         forces_b = fclamp(forces_b, self.clamp_magnitude)
 
-         # Logging
+        # Logging
+        step = self.backend.get_currentStep()
         if self._evec_log is not None:
-            self._evec_log.write(f"{simulation.currentStep} " + " ".join(map(str, n)) + "\n")
+            self._evec_log.write(f"{step} " + " ".join(map(str, n)) + "\n")
             self._evec_log.flush()
         if self._eval_log is not None:
-            self._eval_log.write(f"{simulation.currentStep} " + " ".join(map(str, w[w_sorted])) + "\n")
+            self._eval_log.write(f"{step} " + " ".join(map(str, w[w_sorted])) + "\n")
             self._eval_log.flush()
         if self._xyz_log is not None:
-            pos_nm = positions[self.bias_atom_indices, :].value_in_unit(unit.nanometer)
+            pos_nm = positions[self.bias_atom_indices, :]
             self._xyz_log.write(f"{len(self.bias_atom_indices)}\n")
-            self._xyz_log.write(f"Step {simulation.currentStep}\n")
+            self._xyz_log.write(f"Step {self.backend.get_currentStep()}\n")
             for symbol, coord in zip(self.atom_symbols, pos_nm):
                 x, y, z = coord
                 self._xyz_log.write(f"{symbol} {x:.6f} {y:.6f} {z:.6f}\n")
             self._xyz_log.flush()
-        
+
         return forces_b.reshape(forces_u.shape)
         
     def describeNextReport(self, backend) -> tuple[int, bool, bool, bool, bool, bool]:
@@ -440,8 +445,7 @@ class GADESForceUpdater(Sampling):
 
         return (steps, False, False, False, False, False)
 
-    def report(self, simulation: openmm.app.Simulation, 
-               state: openmm.State) -> None:
+    def report(self, backend, state) -> None:
         """
         Apply (or remove) GADES bias forces at the current simulation step.
 
@@ -453,7 +457,7 @@ class GADESForceUpdater(Sampling):
         Parameter updates are pushed to the OpenMM context when modifications occur.
 
         Args:
-            simulation (openmm.app.Simulation):
+            backend (e.g. openmm.app.Simulation):
                 The OpenMM Simulation object (provides context, step counter, etc.).
             state (openmm.State):
                 Current simulation state. Unused here, but required by the Reporter API.
@@ -493,22 +497,22 @@ class GADESForceUpdater(Sampling):
             - If neither `self.check_stability` nor `self.is_biasing` is set, the method
               performs no action for the current step.
         """
-        step = simulation.currentStep
-        print(f"\033[1;34m[GADES | step {step}] Reporter invoked.\033[0m", flush=True)
+        step = self.backend.get_currentStep()
+        #print(f"\033[1;34m[GADES | step {step}] Reporter invoked.\033[0m", flush=True)
         # Defensive fallback in case describeNextReport hasn't been called yet
-        self._ensure_atom_symbols(simulation)
+        self._ensure_atom_symbols()
 
         def remove_bias():
             for idx in self.bias_atom_indices:
                 self.biased_force.setParticleParameters(idx, idx, (0.0, 0.0, 0.0))
 
         def apply_bias():
-            biased_forces = self._get_gad_force(simulation)
+            gad_biased_forces = self._get_gad_force(backend)
             for i, idx in enumerate(self.bias_atom_indices):
-                self.biased_force.setParticleParameters(idx, idx, tuple(biased_forces[i]))
+                self.biased_force.setParticleParameters(idx, idx, tuple(gad_biased_forces[i]))
 
         if self.check_stability:
-            is_stable = self._is_stable(simulation)
+            is_stable = self._is_stable()
             if not is_stable:
                 print(f"\033[1;31m[GADES | step {step}] System is unstable: Removing bias until next cycle...\033[0m", flush=True)
                 remove_bias()
@@ -517,7 +521,7 @@ class GADESForceUpdater(Sampling):
                 apply_bias()
                 self.next_postbias_check_step = step + 100
 
-            self.biased_force.updateParametersInContext(simulation.context)
+            self.biased_force.updateParametersInContext(self.backend.simulation.context)
             self.check_stability = False
             self.is_biasing = False
             if step == self.next_postbias_check_step:
@@ -527,7 +531,7 @@ class GADESForceUpdater(Sampling):
         if self.is_biasing:
             print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
             apply_bias()
-            self.biased_force.updateParametersInContext(simulation.context)
+            self.biased_force.updateParametersInContext(self.backend.simulation.context)
             self.is_biasing = False
             self.next_postbias_check_step = step + 100
             return None

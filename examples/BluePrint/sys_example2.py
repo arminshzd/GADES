@@ -11,7 +11,7 @@ BIASED = 1  # Set to 1 to enable biasing, 0 to disable
 KAPPA = 0.9
 CLAMP_MAGNITUDE = 1000
 STABILITY_CHECK_FREQ = 1000
-BIAS_UPDATE_FREQ = 2000
+BIAS_UPDATE_FREQ = 200
 LOG_PREFIX = "log_prefix"
 PLATFORM = "CPU"
 
@@ -28,9 +28,10 @@ def generate_simulation():
     #openmm_app_path = os.path.join(app.__path__[0], 'data')
 
     # LOAD THE SYSTEM TOPOLOGY
-    pdb = app.PDBFile("apoa1.pdb")
+    pdb = app.PDBFile("2src_ref_frame.pdb")
     # CHOOSE THE ATOMS TO BIAS
-    biasing_atom_ids = np.array([atom.index for atom in pdb.topology.atoms() if atom.residue.name != 'HOH'])
+    #biasing_atom_ids = np.array([atom.index for atom in pdb.topology.atoms() if atom.residue.name != 'HOH'])
+    biasing_atom_ids = np.array([atom.index for atom in pdb.topology.atoms() if (atom.name == 'CA' or atom.name == 'C')])
     if BIASED:
         print(f"\033[1;32m[GADES] Biasing {len(biasing_atom_ids)} atoms\033[0m")
 
