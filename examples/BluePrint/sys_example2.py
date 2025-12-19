@@ -2,7 +2,7 @@
 import os
 
 from GADES.utils import compute_hessian_force_fd_richardson as hessian
-from GADES import getGADESBiasForce, GADESForceUpdater
+from GADES import createGADESBiasForce, GADESForceUpdater
 from GADES.backend import OpenMMBackend
 
 # -----------------------------SIMULATION PARAMETERS----------------------------
@@ -21,7 +21,6 @@ import numpy as np
 import openmm.app as app
 from openmm import unit, Platform, MonteCarloBarostat, AndersenThermostat
 from openmm.openmm import LangevinIntegrator, VerletIntegrator
-
 
 
 def generate_simulation():
@@ -58,7 +57,7 @@ def generate_simulation():
     system.addForce(barostat)
 
     # ADD THE BIAS FORCE TO THE SYSTEM
-    GAD_force = getGADESBiasForce(system.getNumParticles())
+    GAD_force = createGADESBiasForce(system.getNumParticles())
     system.addForce(GAD_force)
 
     # SET UP THE SIMULATION OBJECT
@@ -81,7 +80,7 @@ if BIASED:
     simulation.reporters.append(
         GADESForceUpdater(
             backend=backend,
-            biased_force=GAD_force, 
+            biased_force=GAD_force,
             bias_atom_indices=biasing_atom_ids,
             hess_func=hessian, 
             clamp_magnitude=CLAMP_MAGNITUDE,

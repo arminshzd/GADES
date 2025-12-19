@@ -13,7 +13,7 @@ class Sampling(object):
     def __init__(self, backend):
         self.backend = backend
 
-def getGADESBiasForce(n_particles: int) -> CustomExternalForce:
+def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
     """
     Create a custom OpenMM force object for GADES biasing.
 
@@ -40,9 +40,9 @@ def getGADESBiasForce(n_particles: int) -> CustomExternalForce:
         ValueError: If `n_particles` is negative.
 
     Examples:
-        >>> from GADES import getGADESBiasForce
+        >>> from GADES import createOpenMMExternalForce
         >>> system = ...
-        >>> force = GAD_force = getGADESBiasForce(system.getNumParticles())
+        >>> GAD_force = createOpenMMExternalForce(system.getNumParticles())
         >>> system.addForce(GAD_force)
     """
     force = CustomExternalForce("fx*x+fy*y+fz*z")
@@ -59,7 +59,7 @@ class GADESForceUpdater(Sampling):
     def __init__(
         self,
         backend,
-        biased_force: CustomExternalForce,
+        biased_force,
         bias_atom_indices: Sequence[int],
         hess_func: Callable,
         clamp_magnitude: float,
@@ -82,7 +82,8 @@ class GADESForceUpdater(Sampling):
         with optional stability checks and logging.
 
         Args:
-            biased_force (openmm.CustomExternalForce):
+            biased_force:
+                openmm.CustomExternalForce if using the OpenMM backend
                 The OpenMM force object that will receive GADES bias forces.
                 Must be created using `getGADESBiasForce()`.
             bias_atom_indices (Sequence[int]):
@@ -132,12 +133,12 @@ class GADESForceUpdater(Sampling):
             OSError: If log files cannot be created when `logfile_prefix` is set.
 
         Examples:
-            >>> from GADES import getGADESBiasForce, GADESForceUpdater
+            >>> from GADES import createGADESBiasForce, GADESForceUpdater
             >>> from GADES.utils import compute_hessian_force_fd_richardson as hessian
             >>> system = ...
             >>> simulation = ...
             >>> biasing_atom_ids = ...
-            >>> GAD_force = getGADESBiasForce(system.getNumParticles())
+            >>> GAD_force = createGADESBiasForce(system.getNumParticles())
             >>> GADESupdater = GADESForceUpdater(
                                 biased_force=GAD_force, 
                                 bias_atom_indices=biasing_atom_ids,
@@ -326,7 +327,7 @@ class GADESForceUpdater(Sampling):
         and biased atom trajectories to disk.
 
         Args:
-            simulation (openmm.app.Simulation):
+            backend (openmm.app.Simulation):
                 The OpenMM Simulation object containing the current system state.
 
         Returns:
@@ -348,12 +349,7 @@ class GADESForceUpdater(Sampling):
         positions, forces = self.backend.get_current_state()
         forces_u = forces[self.bias_atom_indices, :]
 
-        #state = simulation.context.getState(getPositions=True, getForces=True)
-        #platform = simulation.context.getPlatform().getName()
-        #forces_u = state.getForces(asNumpy=True)[self.bias_atom_indices, :]
-        #positions = state.getPositions(asNumpy=True)
         platform = "CPU"
-        #hess = self.hess_func(simulation.system, positions, self.bias_atom_indices, self.hess_step_size, platform)
         hess = self.hess_func(self.backend, self.bias_atom_indices, self.hess_step_size, platform,)
 
         w, v = np.linalg.eigh(hess)
@@ -498,18 +494,16 @@ class GADESForceUpdater(Sampling):
               performs no action for the current step.
         """
         step = self.backend.get_currentStep()
-        #print(f"\033[1;34m[GADES | step {step}] Reporter invoked.\033[0m", flush=True)
+
         # Defensive fallback in case describeNextReport hasn't been called yet
         self._ensure_atom_symbols()
 
         def remove_bias():
-            for idx in self.bias_atom_indices:
-                self.biased_force.setParticleParameters(idx, idx, (0.0, 0.0, 0.0))
+            self.backend.remove_bias(self.biased_force, self.bias_atom_indices)
 
         def apply_bias():
-            gad_biased_forces = self._get_gad_force(backend)
-            for i, idx in enumerate(self.bias_atom_indices):
-                self.biased_force.setParticleParameters(idx, idx, tuple(gad_biased_forces[i]))
+            gad_biased_forces = self._get_gad_force(self.backend)
+            self.backend.apply_bias(self.biased_force, gad_biased_forces, self.bias_atom_indices)
 
         if self.check_stability:
             is_stable = self._is_stable()
@@ -521,7 +515,6 @@ class GADESForceUpdater(Sampling):
                 apply_bias()
                 self.next_postbias_check_step = step + 100
 
-            self.biased_force.updateParametersInContext(self.backend.simulation.context)
             self.check_stability = False
             self.is_biasing = False
             if step == self.next_postbias_check_step:
@@ -531,7 +524,6 @@ class GADESForceUpdater(Sampling):
         if self.is_biasing:
             print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
             apply_bias()
-            self.biased_force.updateParametersInContext(self.backend.simulation.context)
             self.is_biasing = False
             self.next_postbias_check_step = step + 100
             return None

@@ -6,7 +6,7 @@ from openmm import CustomExternalForce, unit, CMMotionRemover
 
 class Backend:
     def __init__(self):
-        pass
+        self.name = ""
 
     def is_stable(self) -> bool:
         return True
@@ -23,11 +23,18 @@ class Backend:
     def run(self, nsteps: int):
         # Implement the update logic here
         pass
+
+    def apply_bias(self, bias_atom_indices: list, bias_force):
+        pass
+
+    def remove_bias(self, bias_atom_indices: list):
+        pass
     
 class OpenMMBackend(Backend):
     def __init__(self, simulation: openmm.app.Simulation):
         self.simulation = simulation
         self.system = self.simulation.system
+        self.name = "openmm"
 
     def is_stable(self):
         """
@@ -102,10 +109,34 @@ class OpenMMBackend(Backend):
             openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
         return -forces.flatten()
 
+    def apply_bias(self, bias_force, biased_forces, bias_atom_indices: list):
+        """
+        Apply the bias forces to the specified atoms in the OpenMM simulation.
+        :param bias_force: CustomExternalForce
+        :param biased_forces: np.ndarray
+        :param bias_atom_indices: list a list of atom indices to apply the bias to
+        :type bias_atom_indices: list
+        """
+        for i, idx in enumerate(bias_atom_indices):
+            bias_force.setParticleParameters(idx, idx, tuple(biased_forces[i]))
+        bias_force.updateParametersInContext(self.simulation.context)
+
+    def remove_bias(self, bias_force, bias_atom_indices: list):
+        """
+        Apply the bias forces to the specified atoms in the OpenMM simulation.
+        :param bias_force: CustomExternalForce
+        :param bias_atom_indices: list a list of atom indices to remove the bias
+        :type bias_atom_indices: list
+        """
+        for idx in bias_atom_indices:
+            bias_force.setParticleParameters(idx, idx, (0.0, 0.0, 0.0))
+        bias_force.updateParametersInContext(self.simulation.context)
+
 class ASEBackend(Backend):
 
     def __init__(self, atoms):
         self.atoms = atoms
+        self.name = "ase"
 
     def is_stable(self):
         return True
