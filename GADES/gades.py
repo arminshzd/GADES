@@ -7,11 +7,7 @@ import openmm.app
 from openmm import CustomExternalForce, unit, CMMotionRemover
 
 from .utils import clamp_force_magnitudes as fclamp
-from .backend import OpenMMBackend, ASEBackend
-
-class Sampling(object):
-    def __init__(self, backend):
-        self.backend = backend
+from .backend import OpenMMBackend, ASEBackend, GADESCalculator
 
 def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
     """
@@ -55,7 +51,7 @@ def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
     return force
 
 
-class GADESForceUpdater(Sampling):
+class GADESForceUpdater:
     def __init__(
         self,
         backend,
@@ -200,7 +196,6 @@ class GADESForceUpdater(Sampling):
             self._xyz_log.write("# Coordinates are in nanometers; atoms are labeled 'C' by default\n")
             self._xyz_log.flush()
             
-
     def set_kappa(self, kappa: float) -> None:
         """
         Update the scaling factor κ used for the GADES bias force.
@@ -570,3 +565,4 @@ class GADESForceUpdater(Sampling):
         """
         self._close_logs()
         return None
+    

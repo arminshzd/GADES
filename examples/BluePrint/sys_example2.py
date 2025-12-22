@@ -1,6 +1,7 @@
 # ---------------------------------MODULE IMPORTS-------------------------------
 import os
 
+import GADES
 from GADES.utils import compute_hessian_force_fd_richardson as hessian
 from GADES import createGADESBiasForce, GADESForceUpdater
 from GADES.backend import OpenMMBackend

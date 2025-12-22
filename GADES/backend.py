@@ -2,7 +2,7 @@ import numpy as np
 import openmm
 import openmm.app
 from openmm import CustomExternalForce, unit, CMMotionRemover
-
+from ase.calculators.calculator import Calculator, all_changes
 
 class Backend:
     def __init__(self):
@@ -24,10 +24,10 @@ class Backend:
         # Implement the update logic here
         pass
 
-    def apply_bias(self, bias_atom_indices: list, bias_force):
+    def apply_bias(self, bias_force_object, biased_force_values, bias_atom_indices: list):
         pass
 
-    def remove_bias(self, bias_atom_indices: list):
+    def remove_bias(self, bias_force_object, bias_atom_indices: list):
         pass
     
 class OpenMMBackend(Backend):
@@ -109,7 +109,7 @@ class OpenMMBackend(Backend):
             openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
         return -forces.flatten()
 
-    def apply_bias(self, bias_force, biased_forces, bias_atom_indices: list):
+    def apply_bias(self, bias_force_object, biased_force_values, bias_atom_indices: list):
         """
         Apply the bias forces to the specified atoms in the OpenMM simulation.
         :param bias_force: CustomExternalForce
@@ -118,23 +118,45 @@ class OpenMMBackend(Backend):
         :type bias_atom_indices: list
         """
         for i, idx in enumerate(bias_atom_indices):
-            bias_force.setParticleParameters(idx, idx, tuple(biased_forces[i]))
-        bias_force.updateParametersInContext(self.simulation.context)
+            bias_force_object.setParticleParameters(idx, idx, tuple(biased_force_values[i]))
+        bias_force_object.updateParametersInContext(self.simulation.context)
 
-    def remove_bias(self, bias_force, bias_atom_indices: list):
+    def remove_bias(self, bias_force_object, bias_atom_indices: list):
         """
         Apply the bias forces to the specified atoms in the OpenMM simulation.
-        :param bias_force: CustomExternalForce
+        :param bias_force_object: CustomExternalForce
         :param bias_atom_indices: list a list of atom indices to remove the bias
         :type bias_atom_indices: list
         """
         for idx in bias_atom_indices:
-            bias_force.setParticleParameters(idx, idx, (0.0, 0.0, 0.0))
-        bias_force.updateParametersInContext(self.simulation.context)
+            bias_force_object.setParticleParameters(idx, idx, (0.0, 0.0, 0.0))
+        bias_force_object.updateParametersInContext(self.simulation.context)
+
+
+class GADESCalculator(Calculator):
+    implemented_properties = ['energy', 'forces']
+
+    def __init__(self, base_calc, gades_force_updater):
+        super().__init__()
+        self.base_calc = base_calc
+        self.force_updater = gades_force_updater
+        self.atoms = base_calc.atoms
+        self._name = "gades_calculator"
+
+    def calculate(self, atoms=None, properties=('energy', 'forces'),
+                  system_changes=all_changes):
+        # Let base calculator do its job
+        self.base_calc.calculate(atoms, properties, system_changes)
+
+        self.results = self.base_calc.results.copy()
+
+        #if 'forces' in self.results:
+        #    bias = self.bias_fn(atoms)
+        #    self.results['forces'] = self.results['forces'] + bias
 
 class ASEBackend(Backend):
-
-    def __init__(self, atoms):
+    def __init__(self, calculator: Calculator, atoms):
+        self.calculator = calculator
         self.atoms = atoms
         self.name = "ase"
 
@@ -142,38 +164,29 @@ class ASEBackend(Backend):
         return True
 
     def get_atom_symbols(self, atom_symbols: list):
-        if atom_symbols is None:
-            atom_list = list(self.simulation.topology.atoms())
-            self.atom_symbols = [
-                atom_list[i].element.symbol if atom_list[i].element is not None else "X"
-                for i in self.bias_atom_indices
-            ]
+        pass
 
     def get_current_state(self):
-        positions = None
-        forces = None
+        positions = self.atoms.get_positions()
+        forces = self.atoms.get_forces()
         return positions, forces
     
     def get_forces(self, positions) -> np.ndarray:
         """
-        Compute the original (unbiased) forces given atom positions (internal use only).
+        Compute the original (unbiased) forces from an ASE calculator (internal use only).
 
-        This function updates the context with the provided positions, then retrieves
-        forces from force group `0` only. Group `0` is assumed to correspond to the
-        system's original potential (e.g., the PMF) without additional bias terms.
-        The forces are converted to units of kJ/mol/nm and flattened into a 1D array.
+        This function updates the calculator with the provided positions, then retrieves
+        forces. The forces are returned as a 1D array.
 
         Args:
-            positions (openmm.unit.Quantity):
-                Atomic positions, shaped `(N, 3)` with distance units compatible with OpenMM.
-
-        Returns:
-            np.ndarray:
-                Flattened force vector of shape `(3 * N,)`, in units of kJ/mol/nm.
-
-        Notes:
-            - By restricting to `groups={0}`, the returned forces exclude any
-            externally applied bias forces (e.g., from GADES).
+            positions (np.ndarray):
+                Atomic positions, shaped `(N, 3)`.
         """
-        
-        return None
+        self.atoms.set_positions(positions)
+        self.atoms.calc.calculate(atoms=self.atoms, properties=['forces'])
+        forces = self.atoms.calc.results['forces']
+        return -forces.flatten()
+
+
+
+    

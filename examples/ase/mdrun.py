@@ -19,7 +19,7 @@ from ase.md.velocitydistribution import (
 from ase.md.verlet import VelocityVerlet
 
 from GADES.utils import compute_hessian_force_fd_richardson as hessian
-from GADES import getGADESBiasForce, GADESForceUpdater
+from GADES import GADESForceUpdater
 
 # Set up initial positions of Cu atoms on Fcc crystal lattice
 size = 10
@@ -76,14 +76,16 @@ for i in range(20):
 
 etot = np.array(epot) + np.array(ekin)
 
-# Plot energies vs time
-fig, ax = plt.subplots(figsize=(6, 4))
-ax.plot(time_ps, epot, label='Potential energy')
-ax.plot(time_ps, ekin, label='Kinetic energy')
-ax.plot(time_ps, etot, label='Total energy')
-ax.set_xlabel('Time (ps)')
-ax.set_ylabel('Energy (eV)')
-ax.legend(loc='best')
-ax.grid(True, linewidth=0.5, alpha=0.5)
-plt.tight_layout()
-plt.show()
+plotting = False
+if plotting:
+    # Plot energies vs time
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(time_ps, epot, label='Potential energy')
+    ax.plot(time_ps, ekin, label='Kinetic energy')
+    ax.plot(time_ps, etot, label='Total energy')
+    ax.set_xlabel('Time (ps)')
+    ax.set_ylabel('Energy (eV)')
+    ax.legend(loc='best')
+    ax.grid(True, linewidth=0.5, alpha=0.5)
+    plt.tight_layout()
+    plt.show()
