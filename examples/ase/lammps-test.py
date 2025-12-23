@@ -1,4 +1,5 @@
-#export ASE_LAMMPSRUN_COMMAND="$HOME/Codes/lammps-github/build-gpu/lmp"  # Set this to your LAMMPS executable path
+# Note: Need to set LAMMPS executable path in environment variable ASE_LAMMPSRUN_COMMAND
+#   export ASE_LAMMPSRUN_COMMAND="$HOME/Codes/lammps-github/build-gpu/lmp"
 
 from ase import Atoms, units
 from ase.md.verlet import VelocityVerlet
@@ -57,13 +58,19 @@ force_updater = GADESBias(
             logfile_prefix=LOG_PREFIX
             )
 
+# ASE calculator that adds GAD forces to LAMMPS forces based on the LAMMPS calculator
 gades_calc = GADESCalculator(lammps_calc, force_updater)
+
+# In ASE, the Calculator does not know about Atoms
+# Atoms gives the calculator the atom positions to calculate forces and energy.
+# The backend keeps track of both the Atoms object and the Calculator object.
 backend = ASEBackend(gades_calc, atoms)
 
-force_updater.backend = backend  # Set the backend for the force updater
+# Set the backend for the force updater, because GADESBias needs to query the backend
+#  for atom forces, atom symbols and so on.
+force_updater.backend = backend  
 
-# 3. Attach the calculator to the atoms object
-
+# 3. Attach the calculator to the atoms object (note that gades_calc does not have references to atoms)
 atoms.calc = gades_calc
 
 # Relax (optional)
@@ -82,7 +89,7 @@ print('backend Forces:\n', f2.reshape((-1,3)))
 
 positions = atoms.get_positions()
 positions = positions + 0.1 * (np.random.rand(*positions.shape) - 0.5)
-#atoms.set_positions(positions)
+atoms.set_positions(positions)
 #f = atoms.get_forces()  # Force calculation
 atoms.calc.calculate(atoms=atoms, properties=['forces'])
 f = atoms.calc.results['forces']

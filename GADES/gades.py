@@ -126,8 +126,6 @@ class GADESBias:
         # post bias update check
         self.next_postbias_check_step = None
 
-        self.atom_symbols = None
-
         # logging
         self.atom_symbols = None
         self.logfile_prefix = logfile_prefix
@@ -241,7 +239,7 @@ class GADESBias:
         if self.atom_symbols is None:
             self.atom_symbols = self.backend.get_atom_symbols(self.bias_atom_indices)
     
-    def get_gad_force(self, backend) -> np.ndarray:
+    def get_gad_force(self) -> np.ndarray:
         """
         Compute the Gentlest Ascent Dynamics (GAD) biasing force.
 
@@ -310,25 +308,19 @@ class GADESBias:
         self.backend.remove_bias(self.biased_force, self.bias_atom_indices)
 
     def apply_bias(self):
-        gad_biased_forces = self.get_gad_force(self.backend)
+        gad_biased_forces = self.get_gad_force()
         self.backend.apply_bias(self.biased_force, gad_biased_forces, self.bias_atom_indices)
 
-    def register_next_step(self, backend) -> int:
+    def register_next_step(self) -> int:
         """
-        Define when the bias forces should run next used by the OpenMM Reporter interface. 
-
-        Args:
-            backend (e.g. openmm.app.Simulation):
-                The simulation bacjebd providing the current step and state.
+        Define when the bias forces should run next
+        This function is used by the OpenMM Reporter interface in describeNextReport().
 
         Returns:
             - steps (int): Number of steps until the next report.
 
         """
         step = self.backend.get_currentStep()
-
-        # Extract atom symbols on the first call for logging
-        self._ensure_atom_symbols()
 
         # Compute time to each type of report
         steps_to_check = (
@@ -560,7 +552,7 @@ class GADESForceUpdater(GADESBias):
         velocities, forces, energies, volumes) are needed at that time.
 
         Args:
-            simulation (openmm.app.Simulation):
+            backend: openmm.app.Simulation
                 The OpenMM Simulation object providing the current step and state.
 
         Returns:
@@ -583,7 +575,7 @@ class GADESForceUpdater(GADESBias):
                 * Sets internal flags (`is_biasing`, `check_stability`) for use in
                   subsequent reporting steps.
         """
-        steps = self.register_next_step(backend)
+        steps = self.register_next_step()
         return (steps, False, False, False, False, False)
 
     def report(self, backend, state) -> None:

@@ -23,7 +23,6 @@ import openmm.app as app
 from openmm import unit, Platform, MonteCarloBarostat, AndersenThermostat
 from openmm.openmm import LangevinIntegrator, VerletIntegrator
 
-
 def generate_simulation():
     #openmm_app_path = os.path.join(app.__path__[0], 'data')
 
@@ -37,7 +36,6 @@ def generate_simulation():
 
     # DEFINE FORCEFIELD
     forcefield = app.ForceField('amber14/protein.ff14SB.xml', 'amber14/lipid17.xml', 'amber14/tip3p.xml')
-
 
     # SET THE PLATFORM
     platform = Platform.getPlatformByName(PLATFORM)

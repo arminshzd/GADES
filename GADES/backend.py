@@ -5,6 +5,9 @@ from openmm import CustomExternalForce, unit, CMMotionRemover
 from ase.calculators.calculator import Calculator, all_changes
 
 class Backend:
+    """
+    A generic interface for the backends to be used with GADES.
+    """
     def __init__(self):
         self.name = ""
 
@@ -31,6 +34,11 @@ class Backend:
         pass
     
 class OpenMMBackend(Backend):
+    """
+    A wrapper for OpenMM to be used as a backend for GADES.
+
+    :param simulation: The OpenMM Simulation object.
+    """
     def __init__(self, simulation: openmm.app.Simulation):
         self.simulation = simulation
         self.system = self.simulation.system
@@ -147,6 +155,12 @@ class OpenMMBackend(Backend):
 
 
 class GADESCalculator(Calculator):
+    """
+    ASE Calculator wrapper that adds GADES bias forces to an existing ASE Calculator.
+
+    :param base_calc: The base ASE Calculator to which GADES bias forces will be added.
+    :param gades_force_updater: The GADES force updater object responsible for computing and applying bias forces.
+    """
     implemented_properties = ['energy', 'forces']
 
     def __init__(self, base_calc: Calculator, gades_force_updater):
@@ -164,10 +178,16 @@ class GADESCalculator(Calculator):
         self.results = self.base_calc.results.copy()
        
         if 'forces' in self.results:
-            bias = self.force_updater.get_gad_force(self.force_updater.backend)
+            bias = self.force_updater.get_gad_force()
             self.results['forces'] = self.results['forces'] + bias
 
 class ASEBackend(Backend):
+    """
+    A wrapper for ASE to be used as a backend for GADES.
+    
+    :param calculator: The base ASE Calculator to which GADES bias forces will be added.
+    :param atoms: The ASE Atoms object representing the system.
+    """
     def __init__(self, calculator: Calculator, atoms):
         self.calculator = calculator
         self.base_calc = calculator.base_calc
