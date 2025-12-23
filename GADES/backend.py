@@ -38,8 +38,13 @@ class OpenMMBackend(Backend):
 
     def is_stable(self):
         """
+        This method estimates the instantaneous temperature from the system's
+        kinetic energy and compares it to the target temperature of the integrator.
+        If the deviation exceeds 50 K, the system is considered unstable.
+
         Check if the simulation is stable by evaluating the instantaneous temperature
           return True if stable, False otherwise
+
         For a small number of biased DOFs, this criterion might give false positives.
         """
         dof = 0
@@ -67,6 +72,14 @@ class OpenMMBackend(Backend):
 
     def get_atoms(self):
         return self.simulation.topology.atoms()
+
+    def get_atom_symbols(self, bias_atom_indices: list) -> list:
+        atom_list = list(self.simulation.topology.atoms())
+        atom_symbols = [
+            atom_list[i].element.symbol if atom_list[i].element is not None else "X"
+            for i in bias_atom_indices
+        ]
+        return atom_symbols
 
     def get_current_state(self):
         state = self.simulation.context.getState(getPositions=True, getForces=True)
@@ -136,7 +149,7 @@ class OpenMMBackend(Backend):
 class GADESCalculator(Calculator):
     implemented_properties = ['energy', 'forces']
 
-    def __init__(self, base_calc, gades_force_updater):
+    def __init__(self, base_calc: Calculator, gades_force_updater):
         super().__init__()
         self.base_calc = base_calc
         self.force_updater = gades_force_updater
@@ -149,42 +162,56 @@ class GADESCalculator(Calculator):
         self.base_calc.calculate(atoms, properties, system_changes)
 
         self.results = self.base_calc.results.copy()
-
-        #if 'forces' in self.results:
-        #    bias = self.bias_fn(atoms)
-        #    self.results['forces'] = self.results['forces'] + bias
+       
+        if 'forces' in self.results:
+            bias = self.force_updater.get_gad_force(self.force_updater.backend)
+            self.results['forces'] = self.results['forces'] + bias
 
 class ASEBackend(Backend):
     def __init__(self, calculator: Calculator, atoms):
         self.calculator = calculator
+        self.base_calc = calculator.base_calc
         self.atoms = atoms
         self.name = "ase"
 
     def is_stable(self):
         return True
 
-    def get_atom_symbols(self, atom_symbols: list):
-        pass
+    def get_atoms(self):
+        return list(self.atoms)
+
+    def get_atom_symbols(self, bias_atom_indices: list) -> list:
+        atom_list = list(self.atoms)
+        atom_symbols = [
+            atom_list[i].symbol if atom_list[i].symbol is not None else "X"
+            for i in bias_atom_indices
+        ]
+        return atom_symbols
 
     def get_current_state(self):
         positions = self.atoms.get_positions()
-        forces = self.atoms.get_forces()
+        self.base_calc.calculate(atoms=self.atoms, properties=['forces'])
+        forces = self.base_calc.results['forces']
         return positions, forces
     
     def get_forces(self, positions) -> np.ndarray:
         """
-        Compute the original (unbiased) forces from an ASE calculator (internal use only).
+        Compute the original (unbiased) forces from the base calculator of my calculator.
+        The calculate() funtion of my calculator with the biasing forces
+        will be used by the integrator to advance the atom positions.
 
-        This function updates the calculator with the provided positions, then retrieves
-        forces. The forces are returned as a 1D array.
+        This function updates the base calculator with the provided positions,
+        then retrieves forces. The forces are returned as a 1D array.
+
+        This function is called by GADES get_gad_force() for the perturbed positions.
 
         Args:
             positions (np.ndarray):
                 Atomic positions, shaped `(N, 3)`.
         """
         self.atoms.set_positions(positions)
-        self.atoms.calc.calculate(atoms=self.atoms, properties=['forces'])
-        forces = self.atoms.calc.results['forces']
+        self.base_calc.calculate(atoms=self.atoms, properties=['forces'])
+        forces = self.base_calc.results['forces']
         return -forces.flatten()
 
 

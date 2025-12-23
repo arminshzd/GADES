@@ -1,57 +1,10 @@
-from typing import Sequence, Callable, Optional
 import atexit
-
 import numpy as np
-import openmm
-import openmm.app
-from openmm import CustomExternalForce, unit, CMMotionRemover
+from typing import Sequence, Callable, Optional
 
 from .utils import clamp_force_magnitudes as fclamp
-from .backend import OpenMMBackend, ASEBackend, GADESCalculator
 
-def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
-    """
-    Create a custom OpenMM force object for GADES biasing.
-
-    This function constructs an OpenMM `CustomExternalForce` that applies
-    per-particle forces in the form:
-
-    $$F(x, y, z) = f_x * x + f_y * y + f_z * z$$
-
-    where `fx`, `fy`, and `fz` are per-particle parameters that can be updated
-    during a simulation. The force is assigned to group `1` so that it can be
-    easily separated from other forces in analysis or reporting.
-
-    Args:
-        n_particles (int):
-            Number of particles in the system. Each particle will be assigned
-            its own `(fx, fy, fz)` parameter set.
-
-    Returns:
-        openmm.CustomExternalForce:
-            A `CustomExternalForce` object configured with per-particle force
-            parameters for GADES biasing.
-
-    Raises:
-        ValueError: If `n_particles` is negative.
-
-    Examples:
-        >>> from GADES import createOpenMMExternalForce
-        >>> system = ...
-        >>> GAD_force = createOpenMMExternalForce(system.getNumParticles())
-        >>> system.addForce(GAD_force)
-    """
-    force = CustomExternalForce("fx*x+fy*y+fz*z")
-    force.addPerParticleParameter("fx")
-    force.addPerParticleParameter("fy")
-    force.addPerParticleParameter("fz")
-    for i in range(n_particles):
-        force.addParticle(i, [0.0, 0.0, 0.0])
-    force.setForceGroup(1)
-    return force
-
-
-class GADESForceUpdater:
+class GADESBias:
     def __init__(
         self,
         backend,
@@ -65,7 +18,7 @@ class GADESForceUpdater:
         logfile_prefix: Optional[str] = None,
     ):
         r"""
-        Initialize a GADESForceUpdater for applying Gentlest Ascent Dynamics (GADES) bias forces.
+        Initialize a GADESBias for applying Gentlest Ascent Dynamics (GADES) bias forces.
 
         The updater identifies the softest Hessian eigenmode of the system and constructs
         a directional bias force along that mode using:
@@ -78,10 +31,14 @@ class GADESForceUpdater:
         with optional stability checks and logging.
 
         Args:
+            backend:
+                e.g. OpenMMBackend if using the OpenMM backend
+                or ASEBackend if using the ASE backend.
+                The simulation backend providing access to system state.
             biased_force:
                 openmm.CustomExternalForce if using the OpenMM backend
                 The OpenMM force object that will receive GADES bias forces.
-                Must be created using `getGADESBiasForce()`.
+                Must be created using `createGADESBiasForce()`.
             bias_atom_indices (Sequence[int]):
                 Indices of atoms that should receive the bias force.
             hess_func (Callable):
@@ -155,7 +112,8 @@ class GADESForceUpdater:
         self.hess_func = hess_func
         self.clamp_magnitude = clamp_magnitude
         if interval < 100:
-            print("\033[1;33m[GADES| WARNING] Bias update interval must be larger than 100 steps to ensure system stability. Changing the frequency to 110 steps internally...\033[0m")
+            print("\033[1;33m[GADES| WARNING] Bias update interval must be larger than 100 steps to ensure system stability. ")
+            print("Changing the frequency to 110 steps internally...\033[0m")
             self.interval = 110
         else:
             self.interval = interval
@@ -259,29 +217,10 @@ class GADESForceUpdater:
     
     def _is_stable(self) -> bool:
         """
-        Check whether the simulation is thermodynamically stable (internal use only).
-
-        This method estimates the instantaneous temperature from the system's
-        kinetic energy and compares it to the target temperature of the integrator.
-        If the deviation exceeds 50 K, the system is considered unstable.
-
-        Args:
-            simulation (openmm.app.Simulation):
-                The OpenMM Simulation object to evaluate.
-
-        Returns:
-            bool:
-                True if the instantaneous temperature is within 50 K of the
-                target temperature, False otherwise.
-
-        Notes:
-            - Degrees of freedom (DOF) are reduced by one for each constraint
-              and by three if a `CMMotionRemover` is present.
+        invokes the backend is_stable() method to determine if the system's stable.
         """
         return self.backend.is_stable()
-    
-    
-    
+       
     def _ensure_atom_symbols(self) -> None:
         """
         Lazily initialize atom symbols from the simulation topology (internal use only).
@@ -292,10 +231,6 @@ class GADESForceUpdater:
         The initialization is performed only once; subsequent calls will be
         no-ops if `self.atom_symbols` is already set.
 
-        Args:
-            simulation (openmm.app.Simulation):
-                The OpenMM Simulation object from which atom symbols are extracted.
-
         Sets:
             self.atom_symbols (list of str):
                 Atomic symbols corresponding to `bias_atom_indices`.
@@ -304,16 +239,11 @@ class GADESForceUpdater:
             None
         """
         if self.atom_symbols is None:
-            atom_list = list(self.backend.get_atoms())
-            self.atom_symbols = [
-                atom_list[i].element.symbol if atom_list[i].element is not None else "X"
-                for i in self.bias_atom_indices
-            ]
-        
+            self.atom_symbols = self.backend.get_atom_symbols(self.bias_atom_indices)
     
-    def _get_gad_force(self, backend) -> np.ndarray:
+    def get_gad_force(self, backend) -> np.ndarray:
         """
-        Compute the Gentlest Ascent Dynamics (GAD) biasing force (internal use only).
+        Compute the Gentlest Ascent Dynamics (GAD) biasing force.
 
         This method calculates the biased force vector aligned with the softest
         Hessian eigenmode of the system. The bias is scaled by `kappa`, clamped
@@ -356,7 +286,9 @@ class GADESForceUpdater:
         forces_b = fclamp(forces_b, self.clamp_magnitude)
 
         # Logging
-        step = self.backend.get_currentStep()
+        self._ensure_atom_symbols()
+
+        step = self.backend.get_currentStep()      
         if self._evec_log is not None:
             self._evec_log.write(f"{step} " + " ".join(map(str, n)) + "\n")
             self._evec_log.flush()
@@ -373,39 +305,25 @@ class GADESForceUpdater:
             self._xyz_log.flush()
 
         return forces_b.reshape(forces_u.shape)
-        
-    def describeNextReport(self, backend) -> tuple[int, bool, bool, bool, bool, bool]:
-        """
-        Define when the reporter should run next and what data it requires.
 
-        This method is required by the OpenMM `Reporter` interface and must be
-        implemented in all reporter subclasses. It determines how many steps
-        until the next reporting event and specifies which data types (positions,
-        velocities, forces, energies, volumes) are needed at that time.
+    def remove_bias(self):
+        self.backend.remove_bias(self.biased_force, self.bias_atom_indices)
+
+    def apply_bias(self):
+        gad_biased_forces = self.get_gad_force(self.backend)
+        self.backend.apply_bias(self.biased_force, gad_biased_forces, self.bias_atom_indices)
+
+    def register_next_step(self, backend) -> int:
+        """
+        Define when the bias forces should run next used by the OpenMM Reporter interface. 
 
         Args:
-            simulation (openmm.app.Simulation):
-                The OpenMM Simulation object providing the current step and state.
+            backend (e.g. openmm.app.Simulation):
+                The simulation bacjebd providing the current step and state.
 
         Returns:
-            tuple:
-                A 6-element tuple with the following contents:
-                  - steps (int): Number of steps until the next report.
-                  - needsPositions (bool): Always False.
-                  - needsVelocities (bool): Always False.
-                  - needsForces (bool): Always False.
-                  - needsEnergy (bool): Always False.
-                  - needsVolume (bool): Always False.
+            - steps (int): Number of steps until the next report.
 
-        Notes:
-            - Even though this method is not part of the intended public API for
-              `GADESForceUpdater`, it must remain public (no leading underscore)
-              because OpenMM requires `describeNextReport` to be defined.
-            - Internally, this method:
-                * Ensures atom symbols are initialized for logging.
-                * Schedules the next bias update, stability check, or post-bias check.
-                * Sets internal flags (`is_biasing`, `check_stability`) for use in
-                  subsequent reporting steps.
         """
         step = self.backend.get_currentStep()
 
@@ -434,98 +352,8 @@ class GADESForceUpdater:
 
         self.check_stability = is_forced_check or is_regular_check
 
-        return (steps, False, False, False, False, False)
+        return steps
 
-    def report(self, backend, state) -> None:
-        """
-        Apply (or remove) GADES bias forces at the current simulation step.
-
-        This method fulfills the OpenMM `Reporter` interface requirement. It uses
-        internal scheduling flags set by `describeNextReport` to decide whether to:
-          1) perform a stability check and remove bias if unstable,
-          2) update/apply the GADES bias forces, or
-          3) do nothing this step.
-        Parameter updates are pushed to the OpenMM context when modifications occur.
-
-        Args:
-            backend (e.g. openmm.app.Simulation):
-                The OpenMM Simulation object (provides context, step counter, etc.).
-            state (openmm.State):
-                Current simulation state. Unused here, but required by the Reporter API.
-
-        Returns:
-            None
-
-        Side Effects:
-            - Calls `_get_gad_force` to compute biased forces when `is_biasing` is True.
-            - Updates `self.biased_force` per-atom parameters and pushes them with
-              `updateParametersInContext(simulation.context)`.
-            - Clears or sets scheduling flags:
-                * `self.check_stability` → False after a stability-handling step.
-                * `self.is_biasing` → False after bias has been applied.
-                * `self.next_postbias_check_step` → set to `step + 100` after applying bias,
-                  or cleared when the scheduled post-bias check is reached.
-            - Emits informational messages to stdout about actions taken.
-
-        Internal Helpers:
-            - `remove_bias()` (internal use only):
-                Reset the per-atom bias parameters to `(0.0, 0.0, 0.0)` for all
-                `bias_atom_indices`, effectively disabling the bias.
-            - `apply_bias()` (internal use only):
-                Compute the current GADES bias via `_get_gad_force(simulation)` and set
-                per-atom parameters accordingly for all `bias_atom_indices`.
-
-        Notes:
-            - This method is typically triggered by OpenMM according to the schedule
-              returned by `describeNextReport`. It defensively calls
-              `_ensure_atom_symbols(simulation)` in case the reporter was invoked
-              before `describeNextReport`.
-            - If `self.check_stability` is True, the method first evaluates stability via
-              `_is_stable(simulation)`:
-                * If unstable (ΔT > 50 K from target), the bias is removed for safety.
-                * If stable and `self.is_biasing` is True, the bias is (re)applied and a
-                  post-bias check is scheduled in 100 steps.
-            - If neither `self.check_stability` nor `self.is_biasing` is set, the method
-              performs no action for the current step.
-        """
-        step = self.backend.get_currentStep()
-
-        # Defensive fallback in case describeNextReport hasn't been called yet
-        self._ensure_atom_symbols()
-
-        def remove_bias():
-            self.backend.remove_bias(self.biased_force, self.bias_atom_indices)
-
-        def apply_bias():
-            gad_biased_forces = self._get_gad_force(self.backend)
-            self.backend.apply_bias(self.biased_force, gad_biased_forces, self.bias_atom_indices)
-
-        if self.check_stability:
-            is_stable = self._is_stable()
-            if not is_stable:
-                print(f"\033[1;31m[GADES | step {step}] System is unstable: Removing bias until next cycle...\033[0m", flush=True)
-                remove_bias()
-            elif self.is_biasing:
-                print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
-                apply_bias()
-                self.next_postbias_check_step = step + 100
-
-            self.check_stability = False
-            self.is_biasing = False
-            if step == self.next_postbias_check_step:
-                self.next_postbias_check_step = None
-            return None
-
-        if self.is_biasing:
-            print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
-            apply_bias()
-            self.is_biasing = False
-            self.next_postbias_check_step = step + 100
-            return None
-
-        # If neither flag is True, do nothing
-        return None
-    
     def _close_logs(self) -> None:
         """
         Close all open log files associated with the updater (internal use only).
@@ -564,5 +392,280 @@ class GADESForceUpdater:
             None
         """
         self._close_logs()
+        return None
+
+'''
+    OpenMM specific features
+'''
+from openmm import CustomExternalForce
+def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
+    """
+    Create a custom OpenMM force object used for GADES biasing.
+
+    This function constructs an OpenMM `CustomExternalForce` that applies
+    per-particle forces in the form:
+
+    $$F(x, y, z) = f_x * x + f_y * y + f_z * z$$
+
+    where `fx`, `fy`, and `fz` are per-particle parameters that can be updated
+    during a simulation. The force is assigned to group `1` so that it can be
+    easily separated from other forces in analysis or reporting.
+
+    Args:
+        n_particles (int):
+            Number of particles in the system. Each particle will be assigned
+            its own `(fx, fy, fz)` parameter set.
+
+    Returns:
+        openmm.CustomExternalForce:
+            A `CustomExternalForce` object configured with per-particle force
+            parameters for GADES biasing.
+
+    Raises:
+        ValueError: If `n_particles` is negative.
+
+    Examples:
+        >>> from GADES import createOpenMMExternalForce
+        >>> system = ...
+        >>> GAD_force = createOpenMMExternalForce(system.getNumParticles())
+        >>> system.addForce(GAD_force)
+    """
+    force = CustomExternalForce("fx*x+fy*y+fz*z")
+    force.addPerParticleParameter("fx")
+    force.addPerParticleParameter("fy")
+    force.addPerParticleParameter("fz")
+    for i in range(n_particles):
+        force.addParticle(i, [0.0, 0.0, 0.0])
+    force.setForceGroup(1)
+    return force
+
+class GADESForceUpdater(GADESBias):
+    def __init__(
+        self,
+        backend,
+        biased_force,
+        bias_atom_indices: Sequence[int],
+        hess_func: Callable,
+        clamp_magnitude: float,
+        kappa: float,
+        interval: int,
+        stability_interval: Optional[int] = None,
+        logfile_prefix: Optional[str] = None,
+    ):
+        r"""
+        Initialize a GADESForceUpdater for applying Gentlest Ascent Dynamics (GADES) bias forces
+        as an OpenMM Reporter.
+
+        The updater identifies the softest Hessian eigenmode of the system and constructs
+        a directional bias force along that mode using:
+        $$
+        F_{\text{GADES}} = - \kappa \, (\mathbf{F}_{\text{system}} \cdot \vec{n}) \, \vec{n},
+        $$
+
+        where $\vec{n}$ is normalized eigenvector corresponding to the softest mode.
+        the The bias is applied to a specified set of atoms at regular intervals,
+        with optional stability checks and logging.
+
+        Args:
+            biased_force:
+                openmm.CustomExternalForce if using the OpenMM backend
+                The OpenMM force object that will receive GADES bias forces.
+                Must be created using `getGADESBiasForce()`.
+            bias_atom_indices (Sequence[int]):
+                Indices of atoms that should receive the bias force.
+            hess_func (Callable):
+                A user-supplied function returning the Hessian matrix for the system.
+                Must accept `(system, positions, atom_indices, step_size, platform)`
+                as input and return a 2D array-like Hessian. Choose one of 
+                `GADES.utils.compute_hessian_force_fd_richardson`, 
+                `GADES.utils.compute_hessian_force_fd_block_serial`, or
+                `GADES.utils.compute_hessian_force_fd_block_parallel`. We suggest
+                the Richardson variant.
+            clamp_magnitude (float):
+                Maximum allowed magnitude for each component of the bias force,
+                used to prevent unphysical updates or exploration of irrelavant
+                regions.
+            kappa (float):
+                Scaling factor (0 < κ < 1) applied to the bias force along the
+                softest eigenmode. GADES is designed for exploration applications
+                with κ=0.9. Values larger than 1 will lead to the system lingering
+                in the transition regions. Values smaller than 0.9 limit the
+                maximum gradient GADES is able to overcome. We suggest controling
+                this with `clamp_magnitude` instead of `kappa` since `kappa` will
+                damp __all__ forces while the clamp is only effective in high-
+                gradient regions.
+            interval (int):
+                Number of simulation steps between bias force updates. Values
+                less than 100 are overridden to 110 internally to ensure stability.
+                Smaller values make for a more accurate bias direction, at the 
+                expense of computational cost. In our experience, a value of 
+                ~2000 is a good place to start.
+            stability_interval (int, optional):
+                Number of steps between stability checks based on kinetic
+                temperature. If None, only post-bias stability checks are used.
+                This check ensures that the system doesn't stray too far from 
+                the set temperature by turning the bias off if the temperature
+                rises >50 K of the simulation temeprature. We suggest a value of
+                500 steps for most simulations.
+            logfile_prefix (str, optional):
+                Prefix for log files. If provided, the following files are created:
+                  - `<prefix>_evec.log`: trajectory of softest-mode eigenvectors
+                  - `<prefix>_eval.log`: trajectory of  sorted eigenvalue spectra
+                  - `<prefix>_biased_atoms.xyz`: biased atom trajectories in XYZ format
+
+        Raises:
+            ValueError: If `interval` is not a positive integer.
+            OSError: If log files cannot be created when `logfile_prefix` is set.
+
+        Examples:
+            >>> from GADES import createGADESBiasForce, GADESForceUpdater
+            >>> from GADES.utils import compute_hessian_force_fd_richardson as hessian
+            >>> system = ...
+            >>> simulation = ...
+            >>> biasing_atom_ids = ...
+            >>> GAD_force = createGADESBiasForce(system.getNumParticles())
+            >>> GADESupdater = GADESForceUpdater(
+                                biased_force=GAD_force, 
+                                bias_atom_indices=biasing_atom_ids,
+                                hess_func=hessian, 
+                                clamp_magnitude=2500,
+                                kappa=0.9, 
+                                interval=1000, 
+                                stability_interval=500, 
+                                logfile_prefix="GADES_log"
+                                )
+            >>> simulation.reporters.append(GADESupdater)
+            >>> simulation.step(10000)
+            
+        """
+        super().__init__(
+            backend,
+            biased_force,
+            bias_atom_indices,
+            hess_func,
+            clamp_magnitude,
+            kappa,
+            interval,
+            stability_interval,
+            logfile_prefix,
+        )
+            
+    def describeNextReport(self, backend) -> tuple[int, bool, bool, bool, bool, bool]:
+        """
+        Define when the reporter should run next and what data it requires.
+
+        This method is required by the OpenMM `Reporter` interface and must be
+        implemented in all reporter subclasses. It determines how many steps
+        until the next reporting event and specifies which data types (positions,
+        velocities, forces, energies, volumes) are needed at that time.
+
+        Args:
+            simulation (openmm.app.Simulation):
+                The OpenMM Simulation object providing the current step and state.
+
+        Returns:
+            tuple:
+                A 6-element tuple with the following contents:
+                  - steps (int): Number of steps until the next report.
+                  - needsPositions (bool): Always False.
+                  - needsVelocities (bool): Always False.
+                  - needsForces (bool): Always False.
+                  - needsEnergy (bool): Always False.
+                  - needsVolume (bool): Always False.
+
+        Notes:
+            - Even though this method is not part of the intended public API for
+              `GADESForceUpdater`, it must remain public (no leading underscore)
+              because OpenMM requires `describeNextReport` to be defined.
+            - Internally, this method:
+                * Ensures atom symbols are initialized for logging.
+                * Schedules the next bias update, stability check, or post-bias check.
+                * Sets internal flags (`is_biasing`, `check_stability`) for use in
+                  subsequent reporting steps.
+        """
+        steps = self.register_next_step(backend)
+        return (steps, False, False, False, False, False)
+
+    def report(self, backend, state) -> None:
+        """
+        Apply (or remove) GADES bias forces at the current simulation step.
+
+        This method fulfills the OpenMM `Reporter` interface requirement. It uses
+        internal scheduling flags set by `describeNextReport` to decide whether to:
+          1) perform a stability check and remove bias if unstable,
+          2) update/apply the GADES bias forces, or
+          3) do nothing this step.
+        Parameter updates are pushed to the OpenMM context when modifications occur.
+
+        Args:
+            backend (e.g. openmm.app.Simulation):
+                The OpenMM Simulation object (provides context, step counter, etc.).
+            state (openmm.State):
+                Current simulation state. Unused here, but required by the Reporter API.
+
+        Returns:
+            None
+
+        Side Effects:
+            - Calls `get_gad_force` to compute biased forces when `is_biasing` is True.
+            - Updates `self.biased_force` per-atom parameters and pushes them with
+              `updateParametersInContext(simulation.context)`.
+            - Clears or sets scheduling flags:
+                * `self.check_stability` → False after a stability-handling step.
+                * `self.is_biasing` → False after bias has been applied.
+                * `self.next_postbias_check_step` → set to `step + 100` after applying bias,
+                  or cleared when the scheduled post-bias check is reached.
+            - Emits informational messages to stdout about actions taken.
+
+        Internal Helpers:
+            - `remove_bias()` (internal use only):
+                Reset the per-atom bias parameters to `(0.0, 0.0, 0.0)` for all
+                `bias_atom_indices`, effectively disabling the bias.
+            - `apply_bias()` (internal use only):
+                Compute the current GADES bias via `get_gad_force(simulation)` and set
+                per-atom parameters accordingly for all `bias_atom_indices`.
+
+        Notes:
+            - This method is typically triggered by OpenMM according to the schedule
+              returned by `describeNextReport`. It defensively calls
+              `_ensure_atom_symbols(simulation)` in case the reporter was invoked
+              before `describeNextReport`.
+            - If `self.check_stability` is True, the method first evaluates stability via
+              `_is_stable(simulation)`:
+                * If unstable (ΔT > 50 K from target), the bias is removed for safety.
+                * If stable and `self.is_biasing` is True, the bias is (re)applied and a
+                  post-bias check is scheduled in 100 steps.
+            - If neither `self.check_stability` nor `self.is_biasing` is set, the method
+              performs no action for the current step.
+        """
+        step = self.backend.get_currentStep()
+
+        # Defensive fallback in case describeNextReport hasn't been called yet
+        self._ensure_atom_symbols()
+
+        if self.check_stability:
+            is_stable = self._is_stable()
+            if not is_stable:
+                print(f"\033[1;31m[GADES | step {step}] System is unstable: Removing bias until next cycle...\033[0m", flush=True)
+                self.remove_bias()
+            elif self.is_biasing:
+                print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
+                self.apply_bias()
+                self.next_postbias_check_step = step + 100
+
+            self.check_stability = False
+            self.is_biasing = False
+            if step == self.next_postbias_check_step:
+                self.next_postbias_check_step = None
+            return None
+
+        if self.is_biasing:
+            print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
+            self.apply_bias()
+            self.is_biasing = False
+            self.next_postbias_check_step = step + 100
+            return None
+
+        # If neither flag is True, do nothing
         return None
     

@@ -8,7 +8,7 @@ from ase.calculators.lammpsrun import LAMMPS
 from ase.optimize import BFGS
 import numpy as np
 
-from GADES import GADESForceUpdater
+from GADES import GADESBias
 from GADES.backend import ASEBackend, GADESCalculator
 from GADES.utils import compute_hessian_force_fd_richardson as hessian
 
@@ -40,13 +40,12 @@ parameters = {
     'neigh_modify': ['every 1 delay 0 check yes'],
 }
 
-
 # 2. Create the LAMMPS calculator
 lammps_calc = LAMMPS(**parameters)
 
 biasing_atom_ids = np.array([atom.index for atom in atoms if (atom.symbol == 'Ar')])
 
-force_updater = GADESForceUpdater(
+force_updater = GADESBias(
             backend=None,
             biased_force=None,
             bias_atom_indices=biasing_atom_ids,
@@ -71,6 +70,9 @@ atoms.calc = gades_calc
 opt = BFGS(atoms, logfile='opt.log')
 opt.run(fmax=0.01)
 
+#print(f"{list(atoms)}")
+#print(f"{backend.get_atom_symbols(biasing_atom_ids)}")
+
 print('Relaxed energy:', atoms.get_potential_energy())
 f = atoms.get_forces()  # Force calculation
 print('atoms Forces:\n', f)
@@ -82,13 +84,9 @@ positions = atoms.get_positions()
 positions = positions + 0.1 * (np.random.rand(*positions.shape) - 0.5)
 #atoms.set_positions(positions)
 #f = atoms.get_forces()  # Force calculation
-#atoms.calc.calculate(atoms=atoms, properties=['forces'])
-#f = atoms.calc.results['forces']
-
+atoms.calc.calculate(atoms=atoms, properties=['forces'])
+f = atoms.calc.results['forces']
 print('Perturbed forces:\n', f)
-
-
-
 
 # You can now proceed to run MD or other simulations with the 'atoms' object
 # --- Initialize velocities ---
