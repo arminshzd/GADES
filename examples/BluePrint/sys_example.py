@@ -3,6 +3,7 @@ import os
 
 from GADES.utils import compute_hessian_force_fd_richardson as hessian
 from GADES import createGADESBiasForce, GADESForceUpdater
+from GADES.backend import OpenMMBackend
 
 # -----------------------------SIMULATION PARAMETERS----------------------------
 NSTEPS = 1e6
@@ -31,11 +32,10 @@ if BIASED:
     print(f"\033[1;32m[GADES] Biasing {len(biasing_atom_ids)} atoms\033[0m")
 
 # DEFINE FORCEFIELD
-forcefield = app.ForceField("amber14/protein.ff14SB.xml", 
-                        "amber14/tip3p.xml")
-
-# DEFINE FORCEFIELD
 forcefield = app.ForceField('amber14/protein.ff14SB.xml', 'amber14/lipid17.xml', 'amber14/tip3p.xml')
+
+# SET THE PLATFORM
+platform = Platform.getPlatformByName(PLATFORM)
 
 # CREATE SYSTEM OBJECT
 system = forcefield.createSystem(pdb.topology, nonbondedMethod=app.PME, constraints=app.HBonds)
