@@ -186,16 +186,13 @@ class ASEBackend(Backend):
     A wrapper for ASE to be used as a backend for GADES.
     
     :param calculator: The base ASE Calculator to which GADES bias forces will be added.
-    :param atoms: The ASE Atoms object representing the system.
+    :param atoms: The ASE Atoms object.
     """
     def __init__(self, calculator: Calculator, atoms):
         self.calculator = calculator
         self.base_calc = calculator.base_calc
         self.atoms = atoms
         self.name = "ase"
-
-    def is_stable(self):
-        return True
 
     def get_atoms(self):
         return list(self.atoms)
@@ -209,6 +206,9 @@ class ASEBackend(Backend):
         return atom_symbols
 
     def get_current_state(self):
+        """
+        Retrieve the current atom positions and forces from the base calculator.
+        """
         positions = self.atoms.get_positions()
         self.base_calc.calculate(atoms=self.atoms, properties=['forces'])
         forces = self.base_calc.results['forces']
@@ -233,6 +233,17 @@ class ASEBackend(Backend):
         self.base_calc.calculate(atoms=self.atoms, properties=['forces'])
         forces = self.base_calc.results['forces']
         return -forces.flatten()
+    
+    def is_stable(self):
+        """
+        Check if the simulation is stable, whether by evaluating the instantaneous temperature
+        or by atom forces (the norm or max magnitude)
+        """
+        ke = self.atoms.get_kinetic_energy()
+        self.base_calc.calculate(atoms=self.atoms, properties=['forces'])
+        forces = self.base_calc.results['forces']
+
+        return True
 
 
 

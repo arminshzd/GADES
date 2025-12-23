@@ -284,9 +284,14 @@ class GADESBias:
         forces_b = fclamp(forces_b, self.clamp_magnitude)
 
         # Logging
-        self._ensure_atom_symbols()
+        self._logging(n, w, w_sorted, positions)
 
-        step = self.backend.get_currentStep()      
+        return forces_b.reshape(forces_u.shape)
+
+    def _logging(self, n, w, w_sorted, positions) -> None:
+        self._ensure_atom_symbols()
+        step = self.backend.get_currentStep()
+
         if self._evec_log is not None:
             self._evec_log.write(f"{step} " + " ".join(map(str, n)) + "\n")
             self._evec_log.flush()
@@ -296,18 +301,25 @@ class GADESBias:
         if self._xyz_log is not None:
             pos_nm = positions[self.bias_atom_indices, :]
             self._xyz_log.write(f"{len(self.bias_atom_indices)}\n")
-            self._xyz_log.write(f"Step {self.backend.get_currentStep()}\n")
+            self._xyz_log.write(f"Step {step}\n")
             for symbol, coord in zip(self.atom_symbols, pos_nm):
                 x, y, z = coord
                 self._xyz_log.write(f"{symbol} {x:.6f} {y:.6f} {z:.6f}\n")
             self._xyz_log.flush()
 
-        return forces_b.reshape(forces_u.shape)
+    def remove_bias(self) -> None:
+        """
+        Invoke the backend remove_bias() to reset the per-atom bias parameters to `(0.0, 0.0, 0.0)`
+        for all `bias_atom_indices`, effectively disabling the bias.
 
-    def remove_bias(self):
+        """
         self.backend.remove_bias(self.biased_force, self.bias_atom_indices)
 
-    def apply_bias(self):
+    def apply_bias(self) -> None:
+        """
+        Compute the current GADES bias via `get_gad_force()` and invoke the backend `apply_bias()`
+        for all `bias_atom_indices`.
+        """
         gad_biased_forces = self.get_gad_force()
         self.backend.apply_bias(self.biased_force, gad_biased_forces, self.bias_atom_indices)
 
@@ -609,13 +621,8 @@ class GADESForceUpdater(GADESBias):
                   or cleared when the scheduled post-bias check is reached.
             - Emits informational messages to stdout about actions taken.
 
-        Internal Helpers:
-            - `remove_bias()` (internal use only):
-                Reset the per-atom bias parameters to `(0.0, 0.0, 0.0)` for all
-                `bias_atom_indices`, effectively disabling the bias.
-            - `apply_bias()` (internal use only):
-                Compute the current GADES bias via `get_gad_force(simulation)` and set
-                per-atom parameters accordingly for all `bias_atom_indices`.
+        - `remove_bias()` and `apply_bias()` used to be internal helpers
+           now moved to the parent class GADESBias which then invoke the corresponding methods of the backend
 
         Notes:
             - This method is typically triggered by OpenMM according to the schedule
