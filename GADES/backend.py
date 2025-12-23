@@ -177,33 +177,55 @@ class GADESCalculator(Calculator):
 
         self.results = self.base_calc.results.copy()
        
-        if 'forces' in self.results:
-            bias = self.force_updater.get_gad_force()
-            self.results['forces'] = self.results['forces'] + bias
+        if self.force_updater is not None and 'forces' in self.results:
+            if self.force_updater.applying_bias():
+                bias = self.force_updater.get_gad_force()
+                self.results['forces'] = self.results['forces'] + bias
 
 class ASEBackend(Backend):
     """
     A wrapper for ASE to be used as a backend for GADES.
     
-    :param calculator: The base ASE Calculator to which GADES bias forces will be added.
+    :param calculator: The custom ASE Calculator (i.e. GADESCalculator) that includes GADES bias forces.
     :param atoms: The ASE Atoms object.
     """
-    def __init__(self, calculator: Calculator, atoms):
-        self.calculator = calculator
+    def __init__(self, calculator, atoms):
         self.base_calc = calculator.base_calc
         self.atoms = atoms
+        atoms.calc = calculator
         self.name = "ase"
 
+        self.integrator = None
+        self.current_step = -1
+
     def get_atoms(self):
+        """
+        return the list of atoms in the ASE Atoms object, each entry is an Atom object
+        e.g. Atom('Ar', [np.float64(0.0), np.float64(0.0), np.float64(0.0)], index=0)
+        """
         return list(self.atoms)
 
     def get_atom_symbols(self, bias_atom_indices: list) -> list:
+        """
+        Return the atomic symbols for the specified atom indices.
+        """
         atom_list = list(self.atoms)
         atom_symbols = [
             atom_list[i].symbol if atom_list[i].symbol is not None else "X"
             for i in bias_atom_indices
         ]
         return atom_symbols
+
+    def get_currentStep(self):
+        """
+        Return the current MD step from the integrator.
+        -1 if there is no integrator associated with the backend.
+        """
+        if self.integrator is not None:
+            self.current_step = self.integrator.nsteps
+        else:
+            self.current_step = -1
+        return self.current_step
 
     def get_current_state(self):
         """

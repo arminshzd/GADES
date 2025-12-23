@@ -18,7 +18,7 @@ BIASED = 1  # Set to 1 to enable biasing, 0 to disable
 KAPPA = 0.9
 CLAMP_MAGNITUDE = 1000
 STABILITY_CHECK_FREQ = 1000
-BIAS_UPDATE_FREQ = 200
+BIAS_UPDATE_FREQ = 100
 LOG_PREFIX = "log_prefix"
 PLATFORM = "CPU"
 
@@ -46,68 +46,75 @@ lammps_calc = LAMMPS(**parameters)
 
 biasing_atom_ids = np.array([atom.index for atom in atoms if (atom.symbol == 'Ar')])
 
-force_updater = GADESBias(
-            backend=None,
-            biased_force=None,
-            bias_atom_indices=biasing_atom_ids,
-            hess_func=hessian,
-            clamp_magnitude=CLAMP_MAGNITUDE,
-            kappa=KAPPA, 
-            interval=BIAS_UPDATE_FREQ, 
-            stability_interval=STABILITY_CHECK_FREQ, 
-            logfile_prefix=LOG_PREFIX
-            )
+force_bias = GADESBias(backend=None,
+                       biased_force=None, # maybe can be acquired internally
+                       bias_atom_indices=biasing_atom_ids,
+                       hess_func=hessian,
+                       clamp_magnitude=CLAMP_MAGNITUDE,
+                       kappa=KAPPA, 
+                       interval=BIAS_UPDATE_FREQ, 
+                       stability_interval=STABILITY_CHECK_FREQ, 
+                       logfile_prefix=LOG_PREFIX
+                       )
 
 # ASE calculator that adds GAD forces to LAMMPS forces based on the LAMMPS calculator
-gades_calc = GADESCalculator(lammps_calc, force_updater)
+# We keep force bias from the calculator so that we can support other force bias later (beyond GADESBias)
+gades_calc = GADESCalculator(lammps_calc, force_bias)
 
+# 3. Create the ASE backend for GADES
 # In ASE, the Calculator does not know about Atoms
 # Atoms gives the calculator the atom positions to calculate forces and energy.
 # The backend keeps track of both the Atoms object and the Calculator object.
+# Inside the ASEBackend constructor, we attach atoms.calc to gades_calc
 backend = ASEBackend(gades_calc, atoms)
 
-# Set the backend for the force updater, because GADESBias needs to query the backend
+# Set the backend for the force bias, because GADESBias needs to query the backend
 #  for atom forces, atom symbols and so on.
-force_updater.backend = backend  
-
-# 3. Attach the calculator to the atoms object (note that gades_calc does not have references to atoms)
-atoms.calc = gades_calc
+force_bias.backend = backend
 
 # Relax (optional)
 opt = BFGS(atoms, logfile='opt.log')
 opt.run(fmax=0.01)
+print('Relaxed energy:', atoms.get_potential_energy())
 
 #print(f"{list(atoms)}")
 #print(f"{backend.get_atom_symbols(biasing_atom_ids)}")
 
-print('Relaxed energy:', atoms.get_potential_energy())
-f = atoms.get_forces()  # Force calculation
-print('atoms Forces:\n', f)
 
-f2 = backend.get_forces(atoms.get_positions())
-print('backend Forces:\n', f2.reshape((-1,3)))
-
-positions = atoms.get_positions()
-positions = positions + 0.1 * (np.random.rand(*positions.shape) - 0.5)
-atoms.set_positions(positions)
+# Testing force calculation
 #f = atoms.get_forces()  # Force calculation
-atoms.calc.calculate(atoms=atoms, properties=['forces'])
-f = atoms.calc.results['forces']
-print('Perturbed forces:\n', f)
+#print('atoms Forces:\n', f)
+#f2 = backend.get_forces(atoms.get_positions())
+#print('backend Forces:\n', f2.reshape((-1,3)))
 
-# You can now proceed to run MD or other simulations with the 'atoms' object
+# Testing force calculation with perturbed positions
+#positions = atoms.get_positions()
+#positions = positions + 0.1 * (np.random.rand(*positions.shape) - 0.5)
+#atoms.set_positions(positions)
+# either with atom.get_forces()
+#f = atoms.get_forces()  # Force calculation
+# or with atoms.calc.calculate()
+#atoms.calc.calculate(atoms=atoms, properties=['forces'])
+#f = atoms.calc.results['forces']
+#print('Perturbed forces:\n', f)
+
+# Run MD or other simulations with the 'atoms' object
+
 # --- Initialize velocities ---
 MaxwellBoltzmannDistribution(atoms, temperature_K=300.0)
 
 # --- MD setup ---
 timestep_fs = 5
 dyn = VelocityVerlet(atoms, timestep_fs * units.fs)
-n_steps = 100
+n_steps = 200
 steps_per_block = 10
 
 time_ps, epot_list, ekin_list = [], [], []
 mdind = 0
 
+# Provide the integrator to the backend for step tracking
+# Remember that in ASE, Atoms and Calculator are not aware if MD  timesteps, or Integrator does.
+backend.integrator = dyn
 
 for i in range(n_steps // steps_per_block):
     dyn.run(steps_per_block)
@@ -117,9 +124,11 @@ for i in range(n_steps // steps_per_block):
     time_ps.append(mdind * timestep_fs / 1000.0)  # fs -> ps
     pe = atoms.get_potential_energy()
     ke = atoms.get_kinetic_energy()
-    print(f'Step: {mdind} Epot: {pe}, Ekin: {ke}')
-    epot_list.append(atoms.get_potential_energy())
-    ekin_list.append(atoms.get_kinetic_energy())
+    T = atoms.get_temperature()
+    print(f'Step: {mdind} {pe}, {ke}, {T}')
+    epot_list.append(pe)
+    ekin_list.append(ke)
+
 
 print("MD run complete.")
 

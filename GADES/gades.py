@@ -323,6 +323,22 @@ class GADESBias:
         gad_biased_forces = self.get_gad_force()
         self.backend.apply_bias(self.biased_force, gad_biased_forces, self.bias_atom_indices)
 
+    def applying_bias(self) -> bool:
+        """
+        Returns whether the bias is being applied in the current step.
+
+        Returns:
+            bool: True if the bias is being applied, False otherwise.
+        """
+        step = self.backend.get_currentStep()
+        if step < 0:
+            self.is_biasing = False
+        elif step % self.interval == 0:
+            self.is_biasing = True
+        else:
+            self.is_biasing = False
+        return self.is_biasing
+    
     def register_next_step(self) -> int:
         """
         Define when the bias forces should run next

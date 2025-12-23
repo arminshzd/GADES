@@ -56,6 +56,7 @@ def generate_simulation():
     system.addForce(barostat)
 
     # ADD THE BIAS FORCE TO THE SYSTEM
+    # OpenMM requires that GAD_force added to the system before creating the Simulation object
     GAD_force = createGADESBiasForce(system.getNumParticles())
     system.addForce(GAD_force)
 
