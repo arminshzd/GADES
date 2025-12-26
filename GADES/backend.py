@@ -232,7 +232,7 @@ class ASEBackend(Backend):
         Retrieve the current atom positions and forces from the base calculator.
         """
         positions = self.atoms.get_positions()
-        self.base_calc.calculate(atoms=self.atoms, properties=['forces'])
+        self.base_calc.calculate(atoms=self.atoms, properties=['forces'], system_changes=all_changes)
         forces = self.base_calc.results['forces']
         return positions, forces
     
@@ -252,7 +252,7 @@ class ASEBackend(Backend):
                 Atomic positions, shaped `(N, 3)`.
         """
         self.atoms.set_positions(positions)
-        self.base_calc.calculate(atoms=self.atoms, properties=['forces'])
+        self.base_calc.calculate(atoms=self.atoms, properties=['forces'], system_changes=all_changes)
         forces = self.base_calc.results['forces']
         return -forces.flatten()
     
