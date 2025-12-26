@@ -113,7 +113,7 @@ time_ps, epot_list, ekin_list = [], [], []
 mdind = 0
 
 # Provide the integrator to the backend for step tracking
-# Remember that in ASE, Atoms and Calculator are not aware if MD  timesteps, or Integrator does.
+# Remember that in ASE, Atoms and Calculator are not aware if MD  timesteps, or Integrator is.
 backend.integrator = dyn
 
 for i in range(n_steps // steps_per_block):

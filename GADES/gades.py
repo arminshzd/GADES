@@ -445,9 +445,9 @@ def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
         ValueError: If `n_particles` is negative.
 
     Examples:
-        >>> from GADES import createOpenMMExternalForce
+        >>> from GADES import createGADESBiasForce
         >>> system = ...
-        >>> GAD_force = createOpenMMExternalForce(system.getNumParticles())
+        >>> GAD_force = createGADESBiasForce(system.getNumParticles())
         >>> system.addForce(GAD_force)
     """
     force = CustomExternalForce("fx*x+fy*y+fz*z")
@@ -618,7 +618,7 @@ class GADESForceUpdater(GADESBias):
         Parameter updates are pushed to the OpenMM context when modifications occur.
 
         Args:
-            backend (e.g. openmm.app.Simulation):
+            backend (openmm.app.Simulation):
                 The OpenMM Simulation object (provides context, step counter, etc.).
             state (openmm.State):
                 Current simulation state. Unused here, but required by the Reporter API.

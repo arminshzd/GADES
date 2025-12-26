@@ -20,8 +20,8 @@ PLATFORM = "CPU"
 from sys import stdout
 import numpy as np
 import openmm.app as app
-from openmm import unit, Platform, MonteCarloBarostat, AndersenThermostat
-from openmm.openmm import LangevinIntegrator, VerletIntegrator
+from openmm import unit, Platform, MonteCarloBarostat
+from openmm.openmm import LangevinIntegrator
 
 def generate_simulation():
     #openmm_app_path = os.path.join(app.__path__[0], 'data')

@@ -128,6 +128,7 @@ class OpenMMBackend(Backend):
         state = self.simulation.context.getState(getForces=True, groups={0})
         forces = state.getForces(asNumpy=True).value_in_unit(
             openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
+        # negating the forces does not affect the difference between f and f0 calculation in GADES get_gad_force()
         return -forces.flatten()
 
     def apply_bias(self, bias_force_object, biased_force_values, bias_atom_indices: list):
@@ -254,6 +255,7 @@ class ASEBackend(Backend):
         self.atoms.set_positions(positions)
         self.base_calc.calculate(atoms=self.atoms, properties=['forces'], system_changes=all_changes)
         forces = self.base_calc.results['forces']
+        # negating the forces does not affect the difference between f and f0 calculation in GADES get_gad_force()
         return -forces.flatten()
     
     def is_stable(self):
