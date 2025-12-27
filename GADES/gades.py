@@ -401,7 +401,7 @@ class GADESBias:
                 try:
                     f.close()
                 except Exception:
-                    pass
+                    raise Warning(f"Failed to close log file {attr} properly.")
         return None
 
     def __del__(self) -> None:

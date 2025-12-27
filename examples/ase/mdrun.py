@@ -109,12 +109,13 @@ dyn = VelocityVerlet(atoms, timestep_fs * units.fs)
 n_steps = 200
 steps_per_block = 10
 
+# Provide the integrator to the backend for step tracking
+# Remember that in ASE, Atoms and Calculator are not aware of the current MD timestep.
+# The backend then stores the integrator to track the MD steps to apply the bias forces at the specified interval.
+backend.integrator = dyn
+
 time_ps, epot_list, ekin_list = [], [], []
 mdind = 0
-
-# Provide the integrator to the backend for step tracking
-# Remember that in ASE, Atoms and Calculator are not aware if MD  timesteps, or Integrator is.
-backend.integrator = dyn
 
 for i in range(n_steps // steps_per_block):
     dyn.run(steps_per_block)
@@ -135,6 +136,5 @@ print("MD run complete.")
 positions, forces = backend.get_current_state()
 print('Current positions:\n', positions)
 print('Current forces:\n', forces)
-
 
 #print(epot_list)

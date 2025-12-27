@@ -1,7 +1,7 @@
 import numpy as np
 import openmm
 import openmm.app
-from openmm import CustomExternalForce, unit, CMMotionRemover
+from openmm import unit, CMMotionRemover
 from ase.calculators.calculator import Calculator, all_changes
 
 class Backend:
@@ -261,11 +261,14 @@ class ASEBackend(Backend):
     def is_stable(self):
         """
         Check if the simulation is stable, whether by evaluating the instantaneous temperature
-        or by atom forces (the norm or max magnitude)
+        or by atom forces (the norm or max magnitude).
+        Note that by design neither Calculator nor Atoms knows of the presence of any thermostat.
         """
         ke = self.atoms.get_kinetic_energy()
-        self.base_calc.calculate(atoms=self.atoms, properties=['forces'])
+        self.base_calc.calculate(atoms=self.atoms, properties=['forces'], setup_changes=all_changes)
         forces = self.base_calc.results['forces']
+
+        # TODO: implement a stability criterion based on temperature and/or forces
 
         return True
 
