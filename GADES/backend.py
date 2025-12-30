@@ -129,6 +129,7 @@ class OpenMMBackend(Backend):
         forces = state.getForces(asNumpy=True).value_in_unit(
             openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
         # negating the forces does not affect the difference between f and f0 calculation in GADES get_gad_force()
+        # the hessian calculators use dU/dx = - force for calculations
         return -forces.flatten()
 
     def apply_bias(self, bias_force_object, biased_force_values, bias_atom_indices: list):

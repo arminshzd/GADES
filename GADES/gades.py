@@ -112,7 +112,7 @@ class GADESBias:
         self.hess_func = hess_func
         self.clamp_magnitude = clamp_magnitude
         if interval < 100:
-            print("\033[1;33m[GADES| WARNING] Bias update interval must be larger than 100 steps to ensure system stability. ")
+            print("\033[1;33m[GADES| WARNING] Bias update interval must be larger than 100 steps to ensure system stability.")
             print("Changing the frequency to 110 steps internally...\033[0m")
             self.interval = 110
         else:
@@ -248,10 +248,6 @@ class GADESBias:
         to prevent unphysical magnitudes, and reshaped to match the force array
         of the selected atoms. Optional logging writes eigenvectors, eigenvalues,
         and biased atom trajectories to disk.
-
-        Args:
-            backend (openmm.app.Simulation):
-                The OpenMM Simulation object containing the current system state.
 
         Returns:
             np.ndarray:
@@ -483,7 +479,7 @@ class GADESForceUpdater(GADESBias):
         $$
 
         where $\vec{n}$ is normalized eigenvector corresponding to the softest mode.
-        the The bias is applied to a specified set of atoms at regular intervals,
+        The bias is applied to the specified set of atoms at regular intervals,
         with optional stability checks and logging.
 
         Args:
@@ -503,7 +499,7 @@ class GADESForceUpdater(GADESBias):
                 the Richardson variant.
             clamp_magnitude (float):
                 Maximum allowed magnitude for each component of the bias force,
-                used to prevent unphysical updates or exploration of irrelavant
+                used to prevent unphysical updates or exploration of irrelevant
                 regions.
             kappa (float):
                 Scaling factor (0 < κ < 1) applied to the bias force along the
@@ -525,7 +521,7 @@ class GADESForceUpdater(GADESBias):
                 temperature. If None, only post-bias stability checks are used.
                 This check ensures that the system doesn't stray too far from 
                 the set temperature by turning the bias off if the temperature
-                rises >50 K of the simulation temeprature. We suggest a value of
+                rises >50 K of the simulation temperature. We suggest a value of
                 500 steps for most simulations.
             logfile_prefix (str, optional):
                 Prefix for log files. If provided, the following files are created:
@@ -570,7 +566,7 @@ class GADESForceUpdater(GADESBias):
             logfile_prefix,
         )
             
-    def describeNextReport(self, backend) -> tuple[int, bool, bool, bool, bool, bool]:
+    def describeNextReport(self, simulation) -> tuple[int, bool, bool, bool, bool, bool]:
         """
         Define when the reporter should run next and what data it requires.
 
@@ -580,7 +576,7 @@ class GADESForceUpdater(GADESBias):
         velocities, forces, energies, volumes) are needed at that time.
 
         Args:
-            backend: openmm.app.Simulation
+            simulation: openmm.app.Simulation
                 The OpenMM Simulation object providing the current step and state.
 
         Returns:
@@ -606,7 +602,7 @@ class GADESForceUpdater(GADESBias):
         steps = self.register_next_step()
         return (steps, False, False, False, False, False)
 
-    def report(self, backend, state) -> None:
+    def report(self, simulation, state) -> None:
         """
         Apply (or remove) GADES bias forces at the current simulation step.
 
@@ -618,7 +614,7 @@ class GADESForceUpdater(GADESBias):
         Parameter updates are pushed to the OpenMM context when modifications occur.
 
         Args:
-            backend (openmm.app.Simulation):
+            simulation (openmm.app.Simulation):
                 The OpenMM Simulation object (provides context, step counter, etc.).
             state (openmm.State):
                 Current simulation state. Unused here, but required by the Reporter API.
@@ -637,7 +633,7 @@ class GADESForceUpdater(GADESBias):
                   or cleared when the scheduled post-bias check is reached.
             - Emits informational messages to stdout about actions taken.
 
-        - `remove_bias()` and `apply_bias()` used to be internal helpers
+        - `remove_bias()` and `apply_bias()` used to be internal helpers, 
            now moved to the parent class GADESBias which then invoke the corresponding methods of the backend
 
         Notes:
