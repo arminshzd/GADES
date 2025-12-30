@@ -1,4 +1,5 @@
 import atexit
+import warnings
 import numpy as np
 from typing import Sequence, Callable, Optional
 
@@ -397,7 +398,7 @@ class GADESBias:
                 try:
                     f.close()
                 except Exception:
-                    raise Warning(f"Failed to close log file {attr} properly.")
+                    raise warnings.warn(f"Failed to close log file {attr} properly.")
         return None
 
     def __del__(self) -> None:

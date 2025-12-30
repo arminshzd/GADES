@@ -458,9 +458,6 @@ def compute_hessian_force_fd_block_parallel(backend,
 
         df = (f_perturbed - f0) / epsilon
 
-        del context
-        del integrator
-
         return j, df
 
     # Parallel over selected j columns only
@@ -567,10 +564,6 @@ def compute_hessian_force_fd_block_serial(backend,
 
     # Symmetrize
     hessian_block = 0.5 * (hessian_block + hessian_block.T)
-
-    # Cleanup
-    del context
-    del integrator
 
     return hessian_block
 

@@ -23,10 +23,6 @@ class Backend:
     def get_current_state(self):
         pass
 
-    def run(self, nsteps: int):
-        # Implement the update logic here
-        pass
-
     def apply_bias(self, bias_force_object, biased_force_values, bias_atom_indices: list):
         pass
 
@@ -266,7 +262,7 @@ class ASEBackend(Backend):
         Note that by design neither Calculator nor Atoms knows of the presence of any thermostat.
         """
         ke = self.atoms.get_kinetic_energy()
-        self.base_calc.calculate(atoms=self.atoms, properties=['forces'], setup_changes=all_changes)
+        self.base_calc.calculate(atoms=self.atoms, properties=['forces'], system_changes=all_changes)
         forces = self.base_calc.results['forces']
 
         # TODO: implement a stability criterion based on temperature and/or forces
