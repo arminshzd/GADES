@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import openmm
 import openmm.app
@@ -183,11 +185,15 @@ class GADESCalculator(Calculator):
 class ASEBackend(Backend):
     """
     A wrapper for ASE to be used as a backend for GADES.
-    
+
     :param calculator: The custom ASE Calculator (i.e. GADESCalculator) that includes GADES bias forces.
     :param atoms: The ASE Atoms object.
+    :param target_temperature: Target temperature in Kelvin for stability checking.
+        If not provided, the backend will attempt to read it from the integrator
+        (works for Langevin, NVTBerendsen, NPTBerendsen). If neither is available,
+        stability checking will be skipped with a warning.
     """
-    def __init__(self, calculator, atoms):
+    def __init__(self, calculator, atoms, target_temperature=None):
         self.base_calc = calculator.base_calc
         self.atoms = atoms
         atoms.calc = calculator
@@ -195,6 +201,8 @@ class ASEBackend(Backend):
 
         self.integrator = None
         self.current_step = -1
+        self.target_temperature = target_temperature
+        self._stability_warning_issued = False
 
     def get_atoms(self):
         """
@@ -255,18 +263,64 @@ class ASEBackend(Backend):
         # negating the forces does not affect the difference between f and f0 calculation in GADES get_gad_force()
         return -forces.flatten()
     
+    def _get_target_temperature(self):
+        """
+        Get the target temperature for stability checking.
+
+        Returns the target temperature in Kelvin, trying in order:
+        1. self.target_temperature if set explicitly
+        2. Integrator's temperature attribute (for NVT/NPT integrators)
+        3. None if neither is available
+
+        Returns:
+            float or None: Target temperature in Kelvin, or None if unavailable.
+        """
+        # First check if explicitly set
+        if self.target_temperature is not None:
+            return self.target_temperature
+
+        # Try to get from integrator
+        if self.integrator is not None:
+            # ASE Langevin integrator stores temperature in 'temp' attribute (in Kelvin)
+            if hasattr(self.integrator, 'temp'):
+                return self.integrator.temp
+            # NVTBerendsen and NPTBerendsen store it in 'temperature'
+            if hasattr(self.integrator, 'temperature'):
+                return self.integrator.temperature
+
+        return None
+
     def is_stable(self):
         """
-        Check if the simulation is stable, whether by evaluating the instantaneous temperature
-        or by atom forces (the norm or max magnitude).
-        Note that by design neither Calculator nor Atoms knows of the presence of any thermostat.
+        Check if the simulation is stable by comparing instantaneous temperature
+        to the target temperature.
+
+        The system is considered unstable if the temperature deviates more than
+        50 K from the target. If no target temperature is available (not set
+        explicitly and cannot be read from the integrator), a warning is issued
+        once and the method returns True (stability check skipped).
+
+        Returns:
+            bool: True if stable or if stability check is skipped, False if unstable.
         """
-        ke = self.atoms.get_kinetic_energy()
-        self.base_calc.calculate(atoms=self.atoms, properties=['forces'], system_changes=all_changes)
-        forces = self.base_calc.results['forces']
+        target_temp = self._get_target_temperature()
 
-        # TODO: implement a stability criterion based on temperature and/or forces
+        if target_temp is None:
+            if not self._stability_warning_issued:
+                warnings.warn(
+                    "ASEBackend: Cannot perform stability check - no target temperature available. "
+                    "Either set target_temperature in ASEBackend constructor or use an NVT/NPT integrator. "
+                    "Stability checking will be skipped.",
+                    UserWarning
+                )
+                self._stability_warning_issued = True
+            return True
 
+        current_temp = self.atoms.get_temperature()
+
+        # Use the same 50 K threshold as OpenMMBackend
+        if abs(current_temp - target_temp) > 50:
+            return False
         return True
 
 
