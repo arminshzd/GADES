@@ -1,6 +1,7 @@
 """
 Tests for input validation in GADES.
 """
+import logging
 import pytest
 import warnings
 import numpy as np
@@ -301,20 +302,20 @@ class TestGADESBiasValidation:
                 interval=200.5,
             )
 
-    def test_small_interval_warning(self, valid_hess_func, capsys):
-        """Interval < 100 should print warning and be overridden to 110."""
-        bias = GADESBias(
-            backend=None,
-            biased_force=None,
-            bias_atom_indices=[0, 1, 2],
-            hess_func=valid_hess_func,
-            clamp_magnitude=1000.0,
-            kappa=0.9,
-            interval=50,
-        )
+    def test_small_interval_warning(self, valid_hess_func, caplog):
+        """Interval < 100 should log warning and be overridden to 110."""
+        with caplog.at_level(logging.WARNING):
+            bias = GADESBias(
+                backend=None,
+                biased_force=None,
+                bias_atom_indices=[0, 1, 2],
+                hess_func=valid_hess_func,
+                clamp_magnitude=1000.0,
+                kappa=0.9,
+                interval=50,
+            )
         assert bias.interval == 110
-        captured = capsys.readouterr()
-        assert "WARNING" in captured.out
+        assert "larger than 100 steps" in caplog.text
 
     # --- stability_interval validation ---
 

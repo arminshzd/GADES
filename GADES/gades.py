@@ -1,9 +1,13 @@
 import atexit
+import logging
 import warnings
 import numpy as np
 from typing import Sequence, Callable, Optional
 
 from .utils import clamp_force_magnitudes as fclamp
+
+# Get the GADES logger (configured in __init__.py)
+logger = logging.getLogger("GADES")
 
 class GADESBias:
     def __init__(
@@ -158,8 +162,10 @@ class GADESBias:
         self.hess_func = hess_func
         self.clamp_magnitude = clamp_magnitude
         if interval < 100:
-            print("\033[1;33m[GADES| WARNING] Bias update interval must be larger than 100 steps to ensure system stability.")
-            print("Changing the frequency to 110 steps internally...\033[0m")
+            logger.warning(
+                "Bias update interval must be larger than 100 steps to ensure system stability. "
+                "Changing the frequency to 110 steps internally."
+            )
             self.interval = 110
         else:
             self.interval = interval
@@ -717,10 +723,10 @@ class GADESForceUpdater(GADESBias):
         if self.check_stability:
             is_stable = self._is_stable()
             if not is_stable:
-                print(f"\033[1;31m[GADES | step {step}] System is unstable: Removing bias until next cycle...\033[0m", flush=True)
+                logger.warning(f"step {step}] System is unstable: Removing bias until next cycle...")
                 self.remove_bias()
             elif self.is_biasing:
-                print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
+                logger.info(f"step {step}] Updating bias forces...")
                 self.apply_bias()
                 self.next_postbias_check_step = step + 100
 
@@ -731,7 +737,7 @@ class GADESForceUpdater(GADESBias):
             return None
 
         if self.is_biasing:
-            print(f"\033[1;32m[GADES | step {step}] Updating bias forces...\033[0m", flush=True)
+            logger.info(f"step {step}] Updating bias forces...")
             self.apply_bias()
             self.is_biasing = False
             self.next_postbias_check_step = step + 100
