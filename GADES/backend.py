@@ -6,6 +6,8 @@ import openmm.app
 from openmm import unit, CMMotionRemover
 from ase.calculators.calculator import Calculator, all_changes
 
+from .config import defaults
+
 class Backend:
     """
     A generic interface for the backends to be used with GADES.
@@ -46,7 +48,8 @@ class OpenMMBackend(Backend):
         """
         This method estimates the instantaneous temperature from the system's
         kinetic energy and compares it to the target temperature of the integrator.
-        If the deviation exceeds 50 K, the system is considered unstable.
+        If the deviation exceeds the stability threshold (configurable via
+        ``defaults["stability_threshold_temp_diff"]``), the system is considered unstable.
 
         Check if the simulation is stable by evaluating the instantaneous temperature
           return True if stable, False otherwise
@@ -68,8 +71,8 @@ class OpenMMBackend(Backend):
         temperature = (2*state.getKineticEnergy()/(dof*unit.MOLAR_GAS_CONSTANT_R)).value_in_unit(unit.kelvin)
         target_temperature = self.simulation.integrator.getTemperature().value_in_unit(unit.kelvin)
 
-        # this criterion can be adjusted if needed
-        if abs(temperature - target_temperature) > 50:
+        threshold = defaults["stability_threshold_temp_diff"]
+        if abs(temperature - target_temperature) > threshold:
             return False
         return True
 
@@ -295,10 +298,11 @@ class ASEBackend(Backend):
         Check if the simulation is stable by comparing instantaneous temperature
         to the target temperature.
 
-        The system is considered unstable if the temperature deviates more than
-        50 K from the target. If no target temperature is available (not set
-        explicitly and cannot be read from the integrator), a warning is issued
-        once and the method returns True (stability check skipped).
+        The system is considered unstable if the temperature deviates by more than
+        ``defaults["stability_threshold_temp_diff"]`` from the target. If no target
+        temperature is available (not set explicitly and cannot be read from the
+        integrator), a warning is issued once and the method returns True (stability
+        check skipped).
 
         Returns:
             bool: True if stable or if stability check is skipped, False if unstable.
@@ -318,8 +322,8 @@ class ASEBackend(Backend):
 
         current_temp = self.atoms.get_temperature()
 
-        # Use the same 50 K threshold as OpenMMBackend
-        if abs(current_temp - target_temp) > 50:
+        threshold = defaults["stability_threshold_temp_diff"]
+        if abs(current_temp - target_temp) > threshold:
             return False
         return True
 

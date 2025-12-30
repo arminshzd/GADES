@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 from typing import Sequence, Callable, Optional
 
+from .config import defaults
 from .utils import clamp_force_magnitudes as fclamp
 
 # Get the GADES logger (configured in __init__.py)
@@ -161,12 +162,13 @@ class GADESBias:
         self.bias_atom_indices = bias_atom_indices
         self.hess_func = hess_func
         self.clamp_magnitude = clamp_magnitude
-        if interval < 100:
+        min_interval = defaults["min_bias_update_interval"]
+        if interval < min_interval - 10:
             logger.warning(
-                "Bias update interval must be larger than 100 steps to ensure system stability. "
-                "Changing the frequency to 110 steps internally."
+                f"Bias update interval must be larger than {min_interval - 10} steps to ensure system stability. "
+                f"Changing the frequency to {min_interval} steps internally."
             )
-            self.interval = 110
+            self.interval = min_interval
         else:
             self.interval = interval
         self.kappa = kappa
@@ -510,7 +512,7 @@ def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
     force.addPerParticleParameter("fz")
     for i in range(n_particles):
         force.addParticle(i, [0.0, 0.0, 0.0])
-    force.setForceGroup(1)
+    force.setForceGroup(defaults["gades_force_group"])
     return force
 
 class GADESForceUpdater(GADESBias):
@@ -695,11 +697,11 @@ class GADESForceUpdater(GADESBias):
             - Clears or sets scheduling flags:
                 * `self.check_stability` → False after a stability-handling step.
                 * `self.is_biasing` → False after bias has been applied.
-                * `self.next_postbias_check_step` → set to `step + 100` after applying bias,
-                  or cleared when the scheduled post-bias check is reached.
+                * `self.next_postbias_check_step` → set to `step + defaults["post_bias_check_delay"]`
+                  after applying bias, or cleared when the scheduled post-bias check is reached.
             - Emits informational messages to stdout about actions taken.
 
-        - `remove_bias()` and `apply_bias()` used to be internal helpers, 
+        - `remove_bias()` and `apply_bias()` used to be internal helpers,
            now moved to the parent class GADESBias which then invoke the corresponding methods of the backend
 
         Notes:
@@ -709,13 +711,15 @@ class GADESForceUpdater(GADESBias):
               before `describeNextReport`.
             - If `self.check_stability` is True, the method first evaluates stability via
               `_is_stable(simulation)`:
-                * If unstable (ΔT > 50 K from target), the bias is removed for safety.
+                * If unstable (ΔT > `defaults["stability_threshold_temp_diff"]` from target),
+                  the bias is removed for safety.
                 * If stable and `self.is_biasing` is True, the bias is (re)applied and a
-                  post-bias check is scheduled in 100 steps.
+                  post-bias check is scheduled in `defaults["post_bias_check_delay"]` steps.
             - If neither `self.check_stability` nor `self.is_biasing` is set, the method
               performs no action for the current step.
         """
         step = self.backend.get_currentStep()
+        post_bias_delay = defaults["post_bias_check_delay"]
 
         # Defensive fallback in case describeNextReport hasn't been called yet
         self._ensure_atom_symbols()
@@ -728,7 +732,7 @@ class GADESForceUpdater(GADESBias):
             elif self.is_biasing:
                 logger.info(f"step {step}] Updating bias forces...")
                 self.apply_bias()
-                self.next_postbias_check_step = step + 100
+                self.next_postbias_check_step = step + post_bias_delay
 
             self.check_stability = False
             self.is_biasing = False
@@ -740,7 +744,7 @@ class GADESForceUpdater(GADESBias):
             logger.info(f"step {step}] Updating bias forces...")
             self.apply_bias()
             self.is_biasing = False
-            self.next_postbias_check_step = step + 100
+            self.next_postbias_check_step = step + post_bias_delay
             return None
 
         # If neither flag is True, do nothing
