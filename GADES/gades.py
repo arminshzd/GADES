@@ -83,8 +83,16 @@ class GADESBias:
                   - `<prefix>_biased_atoms.xyz`: biased atom trajectories in XYZ format
 
         Raises:
+            TypeError: If `hess_func` is not callable.
+            TypeError: If `bias_atom_indices` is not a sequence.
+            ValueError: If `bias_atom_indices` is empty or contains non-integer/negative values.
+            ValueError: If `clamp_magnitude` is not a positive number.
             ValueError: If `interval` is not a positive integer.
+            ValueError: If `stability_interval` is provided but not a positive integer.
             OSError: If log files cannot be created when `logfile_prefix` is set.
+
+        Warns:
+            UserWarning: If `kappa` is outside the recommended range (0, 1].
 
         Examples:
             >>> from GADES import createGADESBiasForce, GADESForceUpdater
@@ -94,19 +102,56 @@ class GADESBias:
             >>> biasing_atom_ids = ...
             >>> GAD_force = createGADESBiasForce(system.getNumParticles())
             >>> GADESupdater = GADESForceUpdater(
-                                biased_force=GAD_force, 
+                                biased_force=GAD_force,
                                 bias_atom_indices=biasing_atom_ids,
-                                hess_func=hessian, 
+                                hess_func=hessian,
                                 clamp_magnitude=2500,
-                                kappa=0.9, 
-                                interval=1000, 
-                                stability_interval=500, 
+                                kappa=0.9,
+                                interval=1000,
+                                stability_interval=500,
                                 logfile_prefix="GADES_log"
                                 )
             >>> simulation.reporters.append(GADESupdater)
             >>> simulation.step(10000)
-            
+
         """
+        # --- Input validation ---
+        # Validate hess_func
+        if not callable(hess_func):
+            raise TypeError(f"hess_func must be callable, got {type(hess_func).__name__}")
+
+        # Validate bias_atom_indices
+        if not hasattr(bias_atom_indices, '__iter__'):
+            raise TypeError(f"bias_atom_indices must be a sequence, got {type(bias_atom_indices).__name__}")
+        bias_atom_indices = list(bias_atom_indices)
+        if len(bias_atom_indices) == 0:
+            raise ValueError("bias_atom_indices cannot be empty")
+        if not all(isinstance(i, (int, np.integer)) and i >= 0 for i in bias_atom_indices):
+            raise ValueError("All bias_atom_indices must be non-negative integers")
+
+        # Validate clamp_magnitude
+        if not isinstance(clamp_magnitude, (int, float, np.number)) or clamp_magnitude <= 0:
+            raise ValueError(f"clamp_magnitude must be a positive number, got {clamp_magnitude}")
+
+        # Validate interval
+        if not isinstance(interval, (int, np.integer)) or interval <= 0:
+            raise ValueError(f"interval must be a positive integer, got {interval}")
+
+        # Validate stability_interval (if provided)
+        if stability_interval is not None:
+            if not isinstance(stability_interval, (int, np.integer)) or stability_interval <= 0:
+                raise ValueError(f"stability_interval must be a positive integer, got {stability_interval}")
+
+        # Validate kappa (warning only, for flexibility)
+        if not (0 < kappa <= 1):
+            warnings.warn(
+                f"kappa={kappa} is outside the recommended range (0, 1]. "
+                "Values > 1 may cause the system to linger in transition regions. "
+                "Values <= 0 will invert or nullify the bias force.",
+                UserWarning
+            )
+
+        # --- Attribute assignment ---
         self.backend = backend
         self.biased_force = biased_force
         self.bias_atom_indices = bias_atom_indices
@@ -202,6 +247,7 @@ class GADESBias:
             None
 
         Raises:
+            TypeError: If `delta` is not a number.
             ValueError: If `delta` is not positive.
 
         Examples:
@@ -209,8 +255,10 @@ class GADESBias:
             >>> print(updater.hess_step_size)
             0.0001
         """
+        if not isinstance(delta, (int, float, np.number)):
+            raise TypeError(f"delta must be a number, got {type(delta).__name__}")
         if delta <= 0:
-            raise ValueError("Hessian step size `delta` cannot be zero or negative.")
+            raise ValueError("Hessian step size `delta` must be positive.")
         self.hess_step_size = delta
         return None
     
@@ -439,7 +487,7 @@ def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
             parameters for GADES biasing.
 
     Raises:
-        ValueError: If `n_particles` is negative.
+        ValueError: If `n_particles` is not a non-negative integer.
 
     Examples:
         >>> from GADES import createGADESBiasForce
@@ -447,6 +495,9 @@ def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
         >>> GAD_force = createGADESBiasForce(system.getNumParticles())
         >>> system.addForce(GAD_force)
     """
+    if not isinstance(n_particles, (int, np.integer)) or n_particles < 0:
+        raise ValueError(f"n_particles must be a non-negative integer, got {n_particles}")
+
     force = CustomExternalForce("fx*x+fy*y+fz*z")
     force.addPerParticleParameter("fx")
     force.addPerParticleParameter("fy")
@@ -531,8 +582,16 @@ class GADESForceUpdater(GADESBias):
                   - `<prefix>_biased_atoms.xyz`: biased atom trajectories in XYZ format
 
         Raises:
+            TypeError: If `hess_func` is not callable.
+            TypeError: If `bias_atom_indices` is not a sequence.
+            ValueError: If `bias_atom_indices` is empty or contains non-integer/negative values.
+            ValueError: If `clamp_magnitude` is not a positive number.
             ValueError: If `interval` is not a positive integer.
+            ValueError: If `stability_interval` is provided but not a positive integer.
             OSError: If log files cannot be created when `logfile_prefix` is set.
+
+        Warns:
+            UserWarning: If `kappa` is outside the recommended range (0, 1].
 
         Examples:
             >>> from GADES import createGADESBiasForce, GADESForceUpdater
@@ -542,18 +601,18 @@ class GADESForceUpdater(GADESBias):
             >>> biasing_atom_ids = ...
             >>> GAD_force = createGADESBiasForce(system.getNumParticles())
             >>> GADESupdater = GADESForceUpdater(
-                                biased_force=GAD_force, 
+                                biased_force=GAD_force,
                                 bias_atom_indices=biasing_atom_ids,
-                                hess_func=hessian, 
+                                hess_func=hessian,
                                 clamp_magnitude=2500,
-                                kappa=0.9, 
-                                interval=1000, 
-                                stability_interval=500, 
+                                kappa=0.9,
+                                interval=1000,
+                                stability_interval=500,
                                 logfile_prefix="GADES_log"
                                 )
             >>> simulation.reporters.append(GADESupdater)
             >>> simulation.step(10000)
-            
+
         """
         super().__init__(
             backend,
