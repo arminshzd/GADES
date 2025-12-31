@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gades"
-version = "0.1.0"
+version = "0.2.0"
 description = "Gentlest Ascent Dynamics for Enhanced Sampling"
 authors = [
     { name = "Armin Shayesteh Zadeh", email = "arminshzd@gmail.com"},
