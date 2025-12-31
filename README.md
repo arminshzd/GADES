@@ -68,57 +68,39 @@ The example script `examples/BluePrint/sys_example.py` and `examples/BluePrint/s
 
 To use GADES with ASE:
 
-1) Import the hessian calculation method and the Force biasing method `getGADESBiasForce`:
+1) Import the required modules:
 
     ``` python
     from GADES.utils import compute_hessian_force_fd_richardson as hessian
-    from GADES import GADESBias
-    from GADES.backend import ASEBackend, GADESCalculator
+    from GADES.backend import ASEBackend
     ```
 
-2) Create a base calculator, e.g. a LAMMPS calculator
-
-    ``` python
-    lammps_calc = LAMMPS(**parameters)
-    ```
-
-3) Create a `GADESBias` object
-
-    ``` python
-    biasing_atom_ids = np.array([atom.index for atom in atoms if (atom.symbol == 'Ar')])
-
-    force_bias = GADESBias(backend=None,
-                       biased_force=None, # maybe can be acquired internally
-                       bias_atom_indices=biasing_atom_ids,
-                       hess_func=hessian,
-                       clamp_magnitude=CLAMP_MAGNITUDE,
-                       kappa=KAPPA, 
-                       interval=BIAS_UPDATE_FREQ, 
-                       stability_interval=STABILITY_CHECK_FREQ, 
-                       logfile_prefix=LOG_PREFIX
-                       )
-    ```
-4) Create a `GADESCalculator` object that adds GADES forces to those from the LAMMPS calculator:
-
-    ``` python
-    gades_calc = GADESCalculator(lammps_calc, force_bias)
-    ```
-
-5) Create an ASE `Atoms` object and an `ASEBackend` object. Inside the ASEBackend constructor, we use `gades_calc` for `atoms.calc`:
+2) Create your atoms and base calculator:
 
     ``` python
     atoms = bulk('Ar', 'fcc', a=5.26).repeat((2, 2, 2))
-    ...
-    backend = ASEBackend(gades_calc, atoms)
+    lammps_calc = LAMMPS(**parameters)
     ```
 
-6) Set the backend for the force bias, because the `GADESBias` object needs to query the backend for atom forces, atom symbols and so on:
+3) Use the `ASEBackend.with_gades()` factory method to set up everything:
 
     ``` python
-    force_bias.backend = backend
+    biasing_atom_ids = [atom.index for atom in atoms if atom.symbol == 'Ar']
+
+    backend = ASEBackend.with_gades(
+        atoms=atoms,
+        base_calc=lammps_calc,
+        bias_atom_indices=biasing_atom_ids,
+        hess_func=hessian,
+        clamp_magnitude=CLAMP_MAGNITUDE,
+        kappa=KAPPA,
+        interval=BIAS_UPDATE_FREQ,
+        stability_interval=STABILITY_CHECK_FREQ,
+        logfile_prefix=LOG_PREFIX,
+    )
     ```
 
-7) Create a time integrator object and let the backend aware of the integrator for step tracking:
+4) Create a time integrator and attach it to the backend:
 
     ``` python
     dyn = VelocityVerlet(atoms, timestep_fs * units.fs)
@@ -126,6 +108,27 @@ To use GADES with ASE:
     ```
 
 The example script `examples/ase/mdrun.py` demonstrates how to use GADES with the ASE backend.
+
+### Large Systems (1000+ atoms)
+
+For large molecular systems where the full Hessian doesn't fit in memory, use the matrix-free Lanczos eigensolver:
+
+``` python
+backend = ASEBackend.with_gades(
+    atoms=atoms,
+    base_calc=calculator,
+    bias_atom_indices=list(range(len(atoms))),
+    hess_func=hessian,
+    clamp_magnitude=1000,
+    kappa=0.9,
+    interval=1000,
+    eigensolver='lanczos_hvp',      # Matrix-free eigensolver (O(N) memory)
+    lanczos_iterations=50,           # More iterations for eigenvector accuracy
+    hvp_epsilon=1e-5,                # Finite difference step size
+)
+```
+
+See the [Large Systems Guide](https://arminshzd.github.io/GADES/guides/large_systems/) for details on eigensolver options and accuracy considerations.
 
 ## Implemention notes
 
@@ -135,15 +138,31 @@ The `GADESForceUpdater` class is derived from `GADESBias` and provides the funct
 
 The parameters of the `GADESBias` constructor are:
 
+**Core parameters:**
+
 * `backend`: The simulation engine to be driven by, or coupled with, `GADESBias`
 * `biased_force`: The bias force associated with GADES
-* `bias_atom_indices`: Indecies of the atoms to be biased. This option allows using block Hessians for the GADES calculations instead of the full Hessian. It also allow for a finer control of the which part of the system you want to bias.
-* `hess_func`: The method for Hessian estimation. There are two methods available in `gades.util` module, both of which use finite difference to estimate the Hessian from OpenMM forces. We suggest using `compute_hessian_force_fd_richardson` which uses Richardson extrapolation for a more accurate estimation and less sensitivity to step size.
-* `clamp_magnitude`: Maximum magnitude of the bias force applied to the system. Same units as OpenMM.
-* `kappa`: $\kappa$ value in the GADES force formulation. We suggest setting it to 0.9 for the most effective exploration and control the biasing effects through `clamp_magnitude` instead.
+* `bias_atom_indices`: Indices of the atoms to be biased. This option allows using block Hessians for the GADES calculations instead of the full Hessian. It also allows for finer control of which part of the system you want to bias.
+* `hess_func`: The method for Hessian estimation. There are two methods available in `GADES.utils` module, both of which use finite difference to estimate the Hessian from forces. We suggest using `compute_hessian_force_fd_richardson` which uses Richardson extrapolation for a more accurate estimation and less sensitivity to step size.
+* `clamp_magnitude`: Maximum magnitude of the bias force applied to the system. Same units as your MD engine.
+* `kappa`: κ value in the GADES force formulation. We suggest setting it to 0.9 for the most effective exploration and control the biasing effects through `clamp_magnitude` instead.
 * `interval`: Intervals at which the bias magnitude and direction gets updated. This also controls the frequency of Hessian calculation and diagonalization.
-* `stability_interval`: Intervals at which stability checks are performed to ensure system stability. We suggest a setting this to `interval`//2 or smaller.
+* `stability_interval`: Intervals at which stability checks are performed to ensure system stability. We suggest setting this to `interval`//2 or smaller.
 * `logfile_prefix`: Prefix for the log files created by GADES. `None` would skip logging the most negative eigenvalue, the corresponding eigenvector, and the current location on the potential energy surface at each update interval.
+
+**Eigensolver options (for large systems):**
+
+* `eigensolver`: Method for finding the softest mode. Options:
+  - `'numpy'` (default): Full eigendecomposition via `np.linalg.eigh()`. O(N²) memory, O(N³) time.
+  - `'lanczos'`: Matrix-based Lanczos iteration. O(N²) memory, O(k·N²) time.
+  - `'lanczos_hvp'`: Matrix-free Lanczos with Hessian-vector products. O(N) memory, suitable for large systems.
+* `lanczos_iterations`: Number of Lanczos iterations (default: 20). Use 50-100 for production runs to ensure eigenvector accuracy.
+* `hvp_epsilon`: Finite difference step size for HVP computation (default: 1e-5).
+
+**Bofill Hessian approximation:**
+
+* `use_bofill_update`: Enable Bofill quasi-Newton Hessian updates between full computations (default: False). When enabled, consider setting `interval` to 1-10 steps for frequent bias updates.
+* `full_hessian_interval`: Steps between full Hessian recomputations when using Bofill (default: 10 × interval).
 
 
 ### Disclaimer
