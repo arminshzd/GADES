@@ -49,12 +49,15 @@ extra_javascript:
 
 nav:
   - Home: index.md
+  - Guides:
+    - guides/index.md
+    - ASE Integration: guides/ase_integration.md
   - Examples:
     - examples/index.md
     - Müller-Brown: examples/MB_pot.md
     - AIB9: examples/AIB9.md
     - Sulfadiazine: examples/sulf.md
-
   - API:
-      - GADES: reference/GADES.md
-      - utils: reference/utils.md
+    - GADES: reference/GADES.md
+    - Backend: reference/backend.md
+    - Utils: reference/utils.md

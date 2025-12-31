@@ -9,8 +9,7 @@ from ase.calculators.lammpsrun import LAMMPS
 from ase.optimize import BFGS
 import numpy as np
 
-from GADES import GADESBias
-from GADES.backend import ASEBackend, GADESCalculator
+from GADES.backend import ASEBackend
 from GADES.utils import compute_hessian_force_fd_richardson as hessian
 
 NSTEPS = 1e6
@@ -46,31 +45,19 @@ lammps_calc = LAMMPS(**parameters)
 
 biasing_atom_ids = np.array([atom.index for atom in atoms if (atom.symbol == 'Ar')])
 
-force_bias = GADESBias(backend=None,
-                       biased_force=None, # maybe can be acquired internally
-                       bias_atom_indices=biasing_atom_ids,
-                       hess_func=hessian,
-                       clamp_magnitude=CLAMP_MAGNITUDE,
-                       kappa=KAPPA, 
-                       interval=BIAS_UPDATE_FREQ, 
-                       stability_interval=STABILITY_CHECK_FREQ, 
-                       logfile_prefix=LOG_PREFIX
-                       )
-
-# ASE calculator that adds GAD forces to LAMMPS forces based on the LAMMPS calculator
-# We keep force bias from the calculator so that we can support other force bias later (beyond GADESBias)
-gades_calc = GADESCalculator(lammps_calc, force_bias)
-
-# 3. Create the ASE backend for GADES
-# In ASE, the Calculator does not know about Atoms
-# Atoms gives the calculator the atom positions to calculate forces and energy.
-# The backend keeps track of both the Atoms object and the Calculator object.
-# Inside the ASEBackend constructor, we attach atoms.calc to gades_calc
-backend = ASEBackend(gades_calc, atoms)
-
-# Set the backend for the force bias, because GADESBias needs to query the backend
-#  for atom forces, atom symbols and so on.
-force_bias.backend = backend
+# Create ASE backend with GADES bias using the factory method.
+# This handles all the internal wiring between GADESBias, GADESCalculator, and ASEBackend.
+backend = ASEBackend.with_gades(
+    atoms=atoms,
+    base_calc=lammps_calc,
+    bias_atom_indices=biasing_atom_ids,
+    hess_func=hessian,
+    clamp_magnitude=CLAMP_MAGNITUDE,
+    kappa=KAPPA,
+    interval=BIAS_UPDATE_FREQ,
+    stability_interval=STABILITY_CHECK_FREQ,
+    logfile_prefix=LOG_PREFIX,
+)
 
 # Relax (optional)
 opt = BFGS(atoms, logfile='opt.log')

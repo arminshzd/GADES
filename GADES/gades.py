@@ -670,8 +670,8 @@ def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
 class GADESForceUpdater(GADESBias):
     def __init__(
         self,
-        backend,
-        biased_force,
+        backend: "Backend",
+        biased_force: Any,
         bias_atom_indices: Sequence[int],
         hess_func: Callable,
         clamp_magnitude: float,
@@ -805,7 +805,7 @@ class GADESForceUpdater(GADESBias):
             full_hessian_interval,
         )
             
-    def describeNextReport(self, simulation) -> tuple[int, bool, bool, bool, bool, bool]:
+    def describeNextReport(self, simulation: Any) -> tuple[int, bool, bool, bool, bool, bool]:
         """
         Define when the reporter should run next and what data it requires.
 

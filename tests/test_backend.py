@@ -328,3 +328,118 @@ class TestASEBackendGetAtomSymbols:
         symbols = backend.get_atom_symbols([0, 2, 4])
         assert symbols == ["Ar", "Ar", "Ar"]
         assert len(symbols) == 3
+
+
+class TestASEBackendWithGades:
+    """Tests for ASEBackend.with_gades factory method."""
+
+    def test_with_gades_basic(self):
+        """Factory method should create fully wired ASEBackend."""
+        atoms = MockAtoms(n_atoms=5)
+        base_calc = MockBaseCalculator(n_atoms=5)
+
+        def mock_hess_func(backend, pos, indices, step_size, platform):
+            n = len(indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+        )
+
+        assert backend.name == "ase"
+        assert backend.atoms is atoms
+        assert backend.base_calc is base_calc
+        assert backend.gades_bias is not None
+
+    def test_with_gades_wires_backend_reference(self):
+        """Factory method should wire backend reference in GADESBias."""
+        atoms = MockAtoms(n_atoms=5)
+        base_calc = MockBaseCalculator(n_atoms=5)
+
+        def mock_hess_func(backend, pos, indices, step_size, platform):
+            n = len(indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+        )
+
+        # GADESBias should have backend reference
+        assert backend.gades_bias.backend is backend
+
+    def test_with_gades_sets_atoms_calc(self):
+        """Factory method should set atoms.calc to GADESCalculator."""
+        atoms = MockAtoms(n_atoms=5)
+        base_calc = MockBaseCalculator(n_atoms=5)
+
+        def mock_hess_func(backend, pos, indices, step_size, platform):
+            n = len(indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+        )
+
+        # atoms.calc should be set to a GADESCalculator
+        assert atoms.calc is not None
+        assert hasattr(atoms.calc, 'force_updater')
+        assert atoms.calc.force_updater is backend.gades_bias
+
+    def test_with_gades_optional_parameters(self):
+        """Factory method should pass optional parameters to GADESBias."""
+        atoms = MockAtoms(n_atoms=5)
+        base_calc = MockBaseCalculator(n_atoms=5)
+
+        def mock_hess_func(backend, pos, indices, step_size, platform):
+            n = len(indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+            stability_interval=500,
+            eigensolver="lanczos",
+            lanczos_iterations=20,
+            use_bofill_update=True,
+            full_hessian_interval=50,
+            target_temperature=350.0,
+        )
+
+        assert backend.gades_bias.eigensolver == "lanczos"
+        assert backend.gades_bias.lanczos_iterations == 20
+        assert backend.gades_bias.use_bofill_update is True
+        assert backend.gades_bias.full_hessian_interval == 50
+        assert backend.target_temperature == 350.0
+
+    def test_with_gades_gades_bias_none_for_regular_init(self):
+        """Regular __init__ should leave gades_bias as None."""
+        atoms = MockAtoms(n_atoms=5)
+        base_calc = MockBaseCalculator(n_atoms=5)
+        calc = MockGADESCalculator(base_calc)
+
+        backend = ASEBackend(calc, atoms)
+
+        assert backend.gades_bias is None

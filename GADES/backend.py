@@ -1,5 +1,5 @@
 import warnings
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Sequence, Tuple, TYPE_CHECKING
 
 import numpy as np
 import openmm
@@ -9,6 +9,9 @@ from ase.calculators.calculator import Calculator, all_changes
 from ase import Atoms
 
 from .config import defaults
+
+if TYPE_CHECKING:
+    from .gades import GADESBias
 
 
 class Backend:
@@ -243,6 +246,7 @@ class ASEBackend(Backend):
     current_step: int
     target_temperature: Optional[float]
     _stability_warning_issued: bool
+    gades_bias: Optional["GADESBias"]
 
     def __init__(
         self,
@@ -259,6 +263,7 @@ class ASEBackend(Backend):
         self.current_step = -1
         self.target_temperature = target_temperature
         self._stability_warning_issued = False
+        self.gades_bias = None
 
     def get_atoms(self) -> List[Any]:
         """
@@ -355,7 +360,7 @@ class ASEBackend(Backend):
 
         return None
 
-    def is_stable(self):
+    def is_stable(self) -> bool:
         """
         Check if the simulation is stable by comparing instantaneous temperature
         to the target temperature.
@@ -389,6 +394,95 @@ class ASEBackend(Backend):
             return False
         return True
 
+    @classmethod
+    def with_gades(
+        cls,
+        atoms: Atoms,
+        base_calc: Calculator,
+        bias_atom_indices: Sequence[int],
+        hess_func: Callable,
+        clamp_magnitude: float,
+        kappa: float,
+        interval: int,
+        stability_interval: Optional[int] = None,
+        logfile_prefix: Optional[str] = None,
+        eigensolver: str = "numpy",
+        lanczos_iterations: Optional[int] = None,
+        use_bofill_update: bool = False,
+        full_hessian_interval: Optional[int] = None,
+        target_temperature: Optional[float] = None,
+    ) -> "ASEBackend":
+        """
+        Factory method to create an ASEBackend with GADES bias fully configured.
 
+        This method handles all the internal wiring between GADESBias, GADESCalculator,
+        and ASEBackend, eliminating the need for manual post-initialization patching.
 
-    
+        Args:
+            atoms: The ASE Atoms object.
+            base_calc: The base ASE Calculator (e.g., LAMMPS, EMT).
+            bias_atom_indices: Indices of atoms that should receive the bias force.
+            hess_func: Function to compute the Hessian matrix.
+            clamp_magnitude: Maximum magnitude for bias force components.
+            kappa: Scaling factor (0 < κ < 1) for the bias force.
+            interval: Number of steps between bias force updates.
+            stability_interval: Steps between stability checks (optional).
+            logfile_prefix: Prefix for log files (optional).
+            eigensolver: Method for computing softest eigenmode ('numpy' or 'lanczos').
+            lanczos_iterations: Number of Lanczos iterations (if using 'lanczos').
+            use_bofill_update: Whether to use Bofill Hessian updates.
+            full_hessian_interval: Steps between full Hessian recomputation (if using Bofill).
+            target_temperature: Target temperature in Kelvin for stability checking.
+
+        Returns:
+            Fully configured ASEBackend with ``gades_bias`` attribute accessible.
+
+        Example:
+            >>> from GADES.backend import ASEBackend
+            >>> from GADES.utils import compute_hessian_force_fd_richardson as hessian
+            >>>
+            >>> backend = ASEBackend.with_gades(
+            ...     atoms=atoms,
+            ...     base_calc=lammps_calc,
+            ...     bias_atom_indices=biasing_atom_ids,
+            ...     hess_func=hessian,
+            ...     clamp_magnitude=1000,
+            ...     kappa=0.9,
+            ...     interval=100,
+            ...     stability_interval=1000,
+            ... )
+            >>> backend.integrator = dyn  # Attach integrator for step tracking
+        """
+        # Import here to avoid circular import at module load time
+        from .gades import GADESBias
+
+        # Step 1: Create GADESBias with backend=None (will be set later)
+        gades_bias = GADESBias(
+            backend=None,  # type: ignore[arg-type]
+            biased_force=None,
+            bias_atom_indices=bias_atom_indices,
+            hess_func=hess_func,
+            clamp_magnitude=clamp_magnitude,
+            kappa=kappa,
+            interval=interval,
+            stability_interval=stability_interval,
+            logfile_prefix=logfile_prefix,
+            eigensolver=eigensolver,
+            lanczos_iterations=lanczos_iterations,
+            use_bofill_update=use_bofill_update,
+            full_hessian_interval=full_hessian_interval,
+        )
+
+        # Step 2: Create GADESCalculator wrapping the base calculator
+        gades_calc = GADESCalculator(base_calc, gades_bias)
+
+        # Step 3: Create ASEBackend instance
+        backend = cls(gades_calc, atoms, target_temperature=target_temperature)
+
+        # Step 4: Wire up the backend reference in GADESBias
+        gades_bias.backend = backend
+
+        # Step 5: Store reference for user access
+        backend.gades_bias: "GADESBias" = gades_bias
+
+        return backend
