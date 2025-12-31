@@ -1,269 +1,231 @@
-from functools import partial
-import jax
-import jax.numpy as jnp
-from jax import jit, grad, jvp
-from jax.scipy.sparse.linalg import cg
+"""
+Lanczos algorithm for eigenvalue computation.
 
+This module provides NumPy-based implementations of the Lanczos algorithm
+for computing eigenvalues and eigenvectors of symmetric matrices.
+"""
+
+import numpy as np
+
+
+# Default options for Lanczos iterations
 options = {
     "N_ITER": 10,
-    "CG_N_ITER": 100,
-    "CG_TOL": 1e-6,
 }
 
-@partial(jit, static_argnums=(0,))
-def lanczos_HVP(loss_fn, params, key=jax.random.PRNGKey(0)):
+
+def lanczos(A, n_iter=None, seed=None):
     """
-    Lanczos method for calculating the dominant eigenvalues and eigenvectors of the hessian of `loss_fn` without explicitly forming it. It calculates the Krylov subpace matrix-vector products through `jax.jvp` instead of explicitly calling `jax.hessian` and diagonalizing it.
+    Lanczos method for calculating eigenvalues and eigenvectors of a symmetric matrix.
+
+    The Lanczos algorithm builds an orthonormal basis for the Krylov subspace and
+    produces a tridiagonal matrix whose eigenvalues approximate those of the original
+    matrix. This is particularly efficient for finding extreme eigenvalues of large
+    sparse matrices.
+
     Args:
-        loss_fn (callable): AD compatible function R^N -> R
-        params (jax.ndarray): (N, ) vector of input params to `loss_fn` 
-        key (jax.ndarray): Key for creating the initial random vector. Defaults to jax.random.PRNGKey(0).
+        A (np.ndarray): (N, N) symmetric matrix to compute eigenvalues/eigenvectors for.
+        n_iter (int, optional): Number of Lanczos iterations. Defaults to options["N_ITER"].
+            More iterations give better approximations but increase computation time.
+        seed (int, optional): Random seed for reproducibility of the initial vector.
 
     Returns:
-        tuple: (eigenvalues, eigenvectors) of `jax.hessian(loss_fn)(params)`
+        tuple: (eigenvalues, eigenvectors) where:
+            - eigenvalues: (n_iter,) array of approximate eigenvalues, sorted ascending
+            - eigenvectors: (N, n_iter) array of corresponding eigenvectors as columns
+
+    Example:
+        >>> A = np.array([[4, 1], [1, 3]])
+        >>> eigvals, eigvecs = lanczos(A, n_iter=2)
+        >>> # Compare with np.linalg.eigh(A)
     """
-
-    grad_fn = grad(loss_fn)  # Precompute gradient function
-    
-    def hvp(v):
-        _, hvp_val = jvp(grad_fn, (params,), (v,))
-        return hvp_val
-
-    n = params.shape[0]
-    num_iter = options["N_ITER"]
-    V = jnp.zeros((n, num_iter))
-    T = jnp.zeros((num_iter, num_iter))
-
-    # Initialize random unit vector
-    v = jax.random.normal(key, (n,))
-    v /= jnp.sqrt(jnp.sum(v**2))  
-    w = hvp(v)
-    alpha = jnp.vdot(v, w)
-    w -= alpha * v
-
-    V = V.at[:, 0].set(v)
-    T = T.at[0, 0].set(alpha)
-
-    def lanczos_step(j, state):
-        V, T, v, w = state
-
-        beta = jnp.sqrt(jnp.sum(w**2))  # More efficient norm calculation
-        v_next = w / beta
-        w = hvp(v_next)
-        w -= beta * v
-        alpha = jnp.vdot(v_next, w)
-        w -= alpha * v_next
-
-        V = V.at[:, j].set(v_next)
-        T = T.at[j, j].set(alpha)
-        T = T.at[j, j - 1].set(beta)
-        T = T.at[j - 1, j].set(beta)
-
-        return V, T, v_next, w
-
-    V, T, v, w = jax.lax.fori_loop(1, num_iter, lanczos_step, (V, T, v, w))
-
-    # Compute eigenvalues and eigenvectors of T
-    eigvals, eigvecs_T = jnp.linalg.eigh(T)
-
-    # Transform eigenvectors of T back to Hessian space
-    eigvecs_H = V @ eigvecs_T
-    eigvecs_H /= jnp.sqrt(jnp.sum(eigvecs_H**2, axis=0))  # Normalize
-
-    return eigvals, eigvecs_H
-
-@partial(jit, static_argnums=(0,))
-def lanczos_HVP_SaI(loss_fn, params, sig, key=jax.random.PRNGKey(0)):
-    """
-    Lanczos method for calculating the dominant eigenvalues and eigenvectors of the shifted and inverted hessian of `loss_fn` without explicitly forming it. It calculates the Krylov subpace matrix-vector products through `jax.jvp` instead of explicitly calling `jax.hessian` and diagonalizing it. Calculates the eigenvalues and eigenvectors of the shifted and inverted matrix B = (H - sig*I)^(-1) to find the eigenvalues of H that are in the vicinity of `sig`.
-    Args:
-        loss_fn (callable): AD compatible function R^N -> R
-        params (jax.ndarray): (N, ) vector of input params to `loss_fn` 
-        sig (float): Shift parameter
-        key (jax.ndarray): Key for creating the initial random vector. Defaults to jax.random.PRNGKey(0).
-
-    Returns:
-        tuple: (eigenvalues, eigenvectors) of `jax.hessian(loss_fn)(params)`
-    """
-
-    grad_fn = grad(loss_fn)  # Precompute gradient function
-    
-    def hvp(v):
-        _, hvp_val = jvp(grad_fn, (params,), (v,))
-        return hvp_val
-    
-    def SaI_on_w(v):
-        """
-        Compute Bv = (A - cI)^(-1)v using CG.
-
-        Args:
-            v (jax.numpy.ndarray): The input vector v.
-        Returns:
-            jax.numpy.ndarray: The result Bv = (A - cI)^(-1)v.
-        """
-
-        # Define the linear operator for (A - cI)x
-        def matvec(x):
-            return hvp(x) - (sig * x)
-
-        # Use Conjugate Gradient to solve the system: (A - cI)x = v
-        solution, _ = cg(matvec, v, tol=options["CG_TOL"], maxiter=options["CG_N_ITER"])
-        
-        return solution
-
-    n = params.shape[0]
-    num_iter = options["N_ITER"]
-    V = jnp.zeros((n, num_iter))
-    T = jnp.zeros((num_iter, num_iter))
-
-    # Initialize random unit vector
-    v = jax.random.normal(key, (n,))
-    v /= jnp.sqrt(jnp.sum(v**2))  
-    w = SaI_on_w(v)
-    alpha = jnp.vdot(v, w)
-    w -= alpha * v
-
-    V = V.at[:, 0].set(v)
-    T = T.at[0, 0].set(alpha)
-
-    def lanczos_step(j, state):
-        V, T, v, w = state
-
-        beta = jnp.sqrt(jnp.sum(w**2))  # More efficient norm calculation
-        v_next = w / beta
-        w = SaI_on_w(v_next)
-        w -= beta * v
-        alpha = jnp.vdot(v_next, w)
-        w -= alpha * v_next
-
-        V = V.at[:, j].set(v_next)
-        T = T.at[j, j].set(alpha)
-        T = T.at[j, j - 1].set(beta)
-        T = T.at[j - 1, j].set(beta)
-
-        return V, T, v_next, w
-
-    V, T, v, w = jax.lax.fori_loop(1, num_iter, lanczos_step, (V, T, v, w))
-
-    # Compute eigenvalues and eigenvectors of T
-    eigvals, eigvecs_T = jnp.linalg.eigh(T)
-    eigvals = 1/eigvals + sig
-
-
-    # Transform eigenvectors of T back to Hessian space
-    eigvecs_H = V @ eigvecs_T
-    eigvecs_H /= jnp.sqrt(jnp.sum(eigvecs_H**2, axis=0))  # Normalize
-
-    return eigvals, eigvecs_H
-
-@jit
-def lanczos(A, key=jax.random.PRNGKey(0)):
-    """
-    Lanczos method for calculating the dominant eigenvalues and eigenvectors of the matrix `A`.
-    Args:
-        A (jax.ndarray): (N, N) matrix to calculate eigenvalues and vectors
-        key (jax.ndarray): Key for creating the initial random vector. Defaults to jax.random.PRNGKey(0).
-
-    Returns:
-        tuple: (eigenvalues, eigenvectors) of `A`
-    """
+    if n_iter is None:
+        n_iter = options["N_ITER"]
 
     n = A.shape[0]
-    num_iter = options["N_ITER"]
-    V = jnp.zeros((n, num_iter))
-    T = jnp.zeros((num_iter, num_iter))
+    n_iter = min(n_iter, n)  # Can't have more iterations than matrix dimension
+
+    V = np.zeros((n, n_iter))
+    T = np.zeros((n_iter, n_iter))
 
     # Initialize random unit vector
-    v = jax.random.normal(key, (n,))
-    v /= jnp.sqrt(jnp.sum(v**2))  
+    rng = np.random.default_rng(seed)
+    v = rng.standard_normal(n)
+    v = v / np.linalg.norm(v)
+
+    # First iteration
     w = A @ v
-    alpha = jnp.vdot(v, w)
-    w -= alpha * v
+    alpha = np.dot(v, w)
+    w = w - alpha * v
 
-    V = V.at[:, 0].set(v)
-    T = T.at[0, 0].set(alpha)
+    V[:, 0] = v
+    T[0, 0] = alpha
 
-    def lanczos_step(j, state):
-        V, T, v, w = state
+    # Lanczos iterations
+    for j in range(1, n_iter):
+        beta = np.linalg.norm(w)
 
-        beta = jnp.sqrt(jnp.sum(w**2))  # More efficient norm calculation
-        v_next = w / beta
+        if beta < 1e-12:
+            # Invariant subspace found, restart with new random vector
+            v_next = rng.standard_normal(n)
+            # Orthogonalize against all previous vectors
+            for k in range(j):
+                v_next = v_next - np.dot(V[:, k], v_next) * V[:, k]
+            v_next = v_next / np.linalg.norm(v_next)
+        else:
+            v_next = w / beta
+
         w = A @ v_next - beta * v
-        alpha = jnp.vdot(v_next, w)
-        w -= alpha * v_next
+        alpha = np.dot(v_next, w)
+        w = w - alpha * v_next
 
-        V = V.at[:, j].set(v_next)
-        T = T.at[j, j].set(alpha)
-        T = T.at[j, j - 1].set(beta)
-        T = T.at[j - 1, j].set(beta)
+        # Re-orthogonalization for numerical stability
+        for k in range(j + 1):
+            w = w - np.dot(V[:, k], w) * V[:, k]
 
-        return V, T, v_next, w
+        V[:, j] = v_next
+        T[j, j] = alpha
+        T[j, j - 1] = beta
+        T[j - 1, j] = beta
 
-    V, T, v, w = jax.lax.fori_loop(1, num_iter, lanczos_step, (V, T, v, w))
+        v = v_next
 
-    # Compute eigenvalues and eigenvectors of T
-    eigvals, eigvecs_T = jnp.linalg.eigh(T)
+    # Compute eigenvalues and eigenvectors of tridiagonal matrix T
+    eigvals, eigvecs_T = np.linalg.eigh(T)
 
-    # Transform eigenvectors of T back to Hessian space
-    eigvecs_H = V @ eigvecs_T
-    eigvecs_H /= jnp.sqrt(jnp.sum(eigvecs_H**2, axis=0))  # Normalize
+    # Transform eigenvectors back to original space
+    eigvecs = V @ eigvecs_T
 
-    return eigvals, eigvecs_H
+    # Normalize eigenvectors
+    norms = np.linalg.norm(eigvecs, axis=0)
+    eigvecs = eigvecs / norms
 
-@jit
-def lanczos_SaI(A, sig, key=jax.random.PRNGKey(0)):
+    return eigvals, eigvecs
+
+
+def lanczos_smallest(A, n_iter=None, seed=None):
     """
-    Lanczos method for calculating the dominant eigenvalues and eigenvectors of the shifted and inverted matrix B = (A-sig*I)^(-1). Find the eigenvalues and vectors of `A` closest to `sig`.
+    Find the smallest eigenvalue and corresponding eigenvector using Lanczos.
+
+    This is a convenience function that returns only the smallest (most negative)
+    eigenvalue and its eigenvector, which is useful for finding the softest mode
+    in molecular dynamics applications.
+
     Args:
-        A (jax.ndarray): (N, N) matrix to calculate eigenvalues and vectors
-        sig (float): Shift parameter
-        key (jax.ndarray): Key for creating the initial random vector. Defaults to jax.random.PRNGKey(0).
+        A (np.ndarray): (N, N) symmetric matrix.
+        n_iter (int, optional): Number of Lanczos iterations.
+        seed (int, optional): Random seed for reproducibility.
 
     Returns:
-        tuple: (eigenvalues, eigenvectors) of `A`
+        tuple: (eigenvalue, eigenvector) where:
+            - eigenvalue: float, the smallest eigenvalue
+            - eigenvector: (N,) array, the corresponding normalized eigenvector
     """
+    eigvals, eigvecs = lanczos(A, n_iter=n_iter, seed=seed)
+    idx = np.argmin(eigvals)
+    return eigvals[idx], eigvecs[:, idx]
+
+
+def lanczos_shift_invert(A, sigma, n_iter=None, seed=None):
+    """
+    Lanczos method with shift-and-invert to find eigenvalues near a target value.
+
+    This variant finds eigenvalues of A closest to `sigma` by applying Lanczos
+    to (A - sigma*I)^(-1). The eigenvalues of this shifted-inverted matrix that
+    are largest in magnitude correspond to eigenvalues of A closest to sigma.
+
+    Args:
+        A (np.ndarray): (N, N) symmetric matrix.
+        sigma (float): Target shift value. Eigenvalues of A near this value
+            will be found most accurately.
+        n_iter (int, optional): Number of Lanczos iterations.
+        seed (int, optional): Random seed for reproducibility.
+
+    Returns:
+        tuple: (eigenvalues, eigenvectors) of A, sorted by distance from sigma.
+
+    Note:
+        This requires solving linear systems with (A - sigma*I), which can be
+        expensive for large matrices. Best suited for finding interior eigenvalues.
+    """
+    if n_iter is None:
+        n_iter = options["N_ITER"]
 
     n = A.shape[0]
-    num_iter = options["N_ITER"]
-    V = jnp.zeros((n, num_iter))
-    T = jnp.zeros((num_iter, num_iter))
+    n_iter = min(n_iter, n)
 
-    A = jnp.linalg.inv(A-jnp.eye(n)*sig)
+    # Compute LU factorization of (A - sigma*I) for efficient solves
+    shifted = A - sigma * np.eye(n)
+
+    try:
+        # Try to use LU decomposition for efficiency
+        from scipy.linalg import lu_factor, lu_solve
+        lu, piv = lu_factor(shifted)
+
+        def solve(b):
+            return lu_solve((lu, piv), b)
+    except ImportError:
+        # Fall back to direct solve
+        def solve(b):
+            return np.linalg.solve(shifted, b)
+
+    V = np.zeros((n, n_iter))
+    T = np.zeros((n_iter, n_iter))
 
     # Initialize random unit vector
-    v = jax.random.normal(key, (n,))
-    v /= jnp.sqrt(jnp.sum(v**2))  
-    w = A @ v
-    alpha = jnp.vdot(v, w)
-    w -= alpha * v
+    rng = np.random.default_rng(seed)
+    v = rng.standard_normal(n)
+    v = v / np.linalg.norm(v)
 
-    V = V.at[:, 0].set(v)
-    T = T.at[0, 0].set(alpha)
+    # First iteration with (A - sigma*I)^(-1)
+    w = solve(v)
+    alpha = np.dot(v, w)
+    w = w - alpha * v
 
-    def lanczos_step(j, state):
-        V, T, v, w = state
+    V[:, 0] = v
+    T[0, 0] = alpha
 
-        beta = jnp.sqrt(jnp.sum(w**2))  # More efficient norm calculation
-        v_next = w / beta
-        w = A @ v_next - beta * v
-        alpha = jnp.vdot(v_next, w)
-        w -= alpha * v_next
+    # Lanczos iterations
+    for j in range(1, n_iter):
+        beta = np.linalg.norm(w)
 
-        V = V.at[:, j].set(v_next)
-        T = T.at[j, j].set(alpha)
-        T = T.at[j, j - 1].set(beta)
-        T = T.at[j - 1, j].set(beta)
+        if beta < 1e-12:
+            v_next = rng.standard_normal(n)
+            for k in range(j):
+                v_next = v_next - np.dot(V[:, k], v_next) * V[:, k]
+            v_next = v_next / np.linalg.norm(v_next)
+        else:
+            v_next = w / beta
 
-        return V, T, v_next, w
+        w = solve(v_next) - beta * v
+        alpha = np.dot(v_next, w)
+        w = w - alpha * v_next
 
-    V, T, v, w = jax.lax.fori_loop(1, num_iter, lanczos_step, (V, T, v, w))
+        # Re-orthogonalization
+        for k in range(j + 1):
+            w = w - np.dot(V[:, k], w) * V[:, k]
 
-    # Compute eigenvalues and eigenvectors of T
-    eigvals, eigvecs_T = jnp.linalg.eigh(T)
-    eigvals = 1/eigvals + sig
+        V[:, j] = v_next
+        T[j, j] = alpha
+        T[j, j - 1] = beta
+        T[j - 1, j] = beta
 
-    # Transform eigenvectors of T back to Hessian space
-    eigvecs_H = V @ eigvecs_T
-    eigvecs_H /= jnp.sqrt(jnp.sum(eigvecs_H**2, axis=0))  # Normalize
+        v = v_next
 
-    return eigvals, eigvecs_H
+    # Compute eigenvalues of T and transform back
+    eigvals_T, eigvecs_T = np.linalg.eigh(T)
+
+    # Transform eigenvalues back: lambda_A = 1/lambda_T + sigma
+    eigvals = 1.0 / eigvals_T + sigma
+
+    # Transform eigenvectors back to original space
+    eigvecs = V @ eigvecs_T
+    norms = np.linalg.norm(eigvecs, axis=0)
+    eigvecs = eigvecs / norms
+
+    # Sort by distance from sigma
+    order = np.argsort(np.abs(eigvals - sigma))
+    eigvals = eigvals[order]
+    eigvecs = eigvecs[:, order]
+
+    return eigvals, eigvecs

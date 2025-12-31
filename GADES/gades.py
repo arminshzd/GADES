@@ -22,6 +22,10 @@ class GADESBias:
         interval: int,
         stability_interval: Optional[int] = None,
         logfile_prefix: Optional[str] = None,
+        eigensolver: str = "numpy",
+        lanczos_iterations: Optional[int] = None,
+        use_bofill_update: bool = False,
+        full_hessian_interval: Optional[int] = None,
     ):
         r"""
         Initialize a GADESBias for applying Gentlest Ascent Dynamics (GADES) bias forces.
@@ -86,6 +90,24 @@ class GADESBias:
                   - `<prefix>_evec.log`: trajectory of softest-mode eigenvectors
                   - `<prefix>_eval.log`: trajectory of  sorted eigenvalue spectra
                   - `<prefix>_biased_atoms.xyz`: biased atom trajectories in XYZ format
+            eigensolver (str, optional):
+                Method for computing the softest eigenmode. Options:
+                  - ``'numpy'`` (default): Use ``np.linalg.eigh()`` for full eigendecomposition.
+                    Accurate and recommended for small systems (< 500 atoms).
+                  - ``'lanczos'``: Use Lanczos iteration to find only the smallest eigenvalue.
+                    Faster for large systems but approximate.
+            lanczos_iterations (int, optional):
+                Number of Lanczos iterations when ``eigensolver='lanczos'``.
+                More iterations improve accuracy. Defaults to ``defaults["lanczos_iterations"]``.
+            use_bofill_update (bool, optional):
+                If True, use Bofill quasi-Newton updates to approximate the Hessian
+                between full Hessian calculations. This reduces computational cost
+                by avoiding expensive Hessian evaluations at every bias update.
+                Defaults to False.
+            full_hessian_interval (int, optional):
+                When ``use_bofill_update=True``, specifies how often (in steps) to
+                compute the full Hessian instead of using Bofill approximation.
+                Defaults to ``interval * defaults["bofill_full_hessian_multiplier"]``.
 
         Raises:
             TypeError: If `hess_func` is not callable.
@@ -94,6 +116,7 @@ class GADESBias:
             ValueError: If `clamp_magnitude` is not a positive number.
             ValueError: If `interval` is not a positive integer.
             ValueError: If `stability_interval` is provided but not a positive integer.
+            ValueError: If `eigensolver` is not one of 'numpy' or 'lanczos'.
             OSError: If log files cannot be created when `logfile_prefix` is set.
 
         Warns:
@@ -156,6 +179,23 @@ class GADESBias:
                 UserWarning
             )
 
+        # Validate eigensolver
+        valid_eigensolvers = ('numpy', 'lanczos')
+        if eigensolver not in valid_eigensolvers:
+            raise ValueError(
+                f"eigensolver must be one of {valid_eigensolvers}, got '{eigensolver}'"
+            )
+
+        # Validate lanczos_iterations (if provided)
+        if lanczos_iterations is not None:
+            if not isinstance(lanczos_iterations, (int, np.integer)) or lanczos_iterations <= 0:
+                raise ValueError(f"lanczos_iterations must be a positive integer, got {lanczos_iterations}")
+
+        # Validate full_hessian_interval (if provided)
+        if full_hessian_interval is not None:
+            if not isinstance(full_hessian_interval, (int, np.integer)) or full_hessian_interval <= 0:
+                raise ValueError(f"full_hessian_interval must be a positive integer, got {full_hessian_interval}")
+
         # --- Attribute assignment ---
         self.backend = backend
         self.biased_force = biased_force
@@ -176,7 +216,24 @@ class GADESBias:
         self.check_stability = False
         self.is_biasing = False
         self.s_interval = stability_interval
-        
+
+        # Eigensolver settings
+        self.eigensolver = eigensolver
+        self.lanczos_iterations = lanczos_iterations or defaults["lanczos_iterations"]
+
+        # Bofill update settings
+        self.use_bofill_update = use_bofill_update
+        if full_hessian_interval is not None:
+            self.full_hessian_interval = full_hessian_interval
+        else:
+            self.full_hessian_interval = self.interval * defaults["bofill_full_hessian_multiplier"]
+
+        # Bofill state (for storing previous Hessian/positions/forces)
+        self._last_hess = None
+        self._last_positions = None
+        self._last_forces = None
+        self._last_hess_step = -1  # Step at which last full Hessian was computed
+
         # post bias update check
         self.next_postbias_check_step = None
 
@@ -295,7 +352,91 @@ class GADESBias:
         """
         if self.atom_symbols is None:
             self.atom_symbols = self.backend.get_atom_symbols(self.bias_atom_indices)
-    
+
+    def _compute_softest_mode(self, hess: np.ndarray):
+        """
+        Compute the smallest eigenvalue and corresponding eigenvector of the Hessian.
+
+        This method dispatches to either NumPy's ``eigh`` or the Lanczos algorithm
+        based on the ``eigensolver`` setting.
+
+        Args:
+            hess (np.ndarray): The Hessian matrix, shape (3N, 3N).
+
+        Returns:
+            tuple: (eigenvalue, eigenvector) where:
+                - eigenvalue (float): The smallest eigenvalue (softest mode).
+                - eigenvector (np.ndarray): The corresponding normalized eigenvector.
+        """
+        if self.eigensolver == 'lanczos':
+            from .lanczos import lanczos_smallest
+            eigval, eigvec = lanczos_smallest(hess, n_iter=self.lanczos_iterations)
+        else:
+            # Default: numpy
+            w, v = np.linalg.eigh(hess)
+            idx = w.argsort()[0]
+            eigval, eigvec = w[idx], v[:, idx]
+
+        # Normalize eigenvector
+        eigvec = eigvec / np.linalg.norm(eigvec)
+        return eigval, eigvec
+
+    def _get_hessian(self, positions: np.ndarray, forces: np.ndarray, step: int) -> np.ndarray:
+        """
+        Get the Hessian matrix, either by full computation or Bofill approximation.
+
+        When ``use_bofill_update`` is enabled, this method uses the Bofill quasi-Newton
+        update to approximate the Hessian between full Hessian calculations. Full Hessian
+        is computed at intervals specified by ``full_hessian_interval``.
+
+        Args:
+            positions (np.ndarray): Current atomic positions.
+            forces (np.ndarray): Current atomic forces.
+            step (int): Current simulation step.
+
+        Returns:
+            np.ndarray: The Hessian matrix, shape (3N_bias, 3N_bias).
+        """
+        platform = "CPU"
+        bias_positions = positions[self.bias_atom_indices, :]
+        bias_forces = forces[self.bias_atom_indices, :]
+
+        # Determine if we need to compute full Hessian
+        need_full_hessian = (
+            not self.use_bofill_update or
+            self._last_hess is None or
+            (step - self._last_hess_step) >= self.full_hessian_interval
+        )
+
+        if need_full_hessian:
+            # Compute full Hessian
+            hess = self.hess_func(
+                self.backend, self.bias_atom_indices, self.hess_step_size, platform
+            )
+            # Store state for future Bofill updates
+            if self.use_bofill_update:
+                self._last_hess = hess.copy()
+                self._last_positions = bias_positions.copy()
+                self._last_forces = bias_forces.copy()
+                self._last_hess_step = step
+        else:
+            # Use Bofill approximation
+            from .bofill import get_bofill_H
+            # Bofill uses gradients (negative forces)
+            hess = get_bofill_H(
+                pos_new=bias_positions,
+                pos_old=self._last_positions,
+                grad_new=-bias_forces,
+                grad_old=-self._last_forces,
+                H=self._last_hess
+            )
+            # Update stored state for next Bofill iteration
+            self._last_hess = hess.copy()
+            self._last_positions = bias_positions.copy()
+            self._last_forces = bias_forces.copy()
+
+        return hess
+
     def get_gad_force(self) -> np.ndarray:
         """
         Compute the Gentlest Ascent Dynamics (GAD) biasing force.
@@ -324,20 +465,26 @@ class GADESBias:
         """
         positions, forces = self.backend.get_current_state()
         forces_u = forces[self.bias_atom_indices, :]
+        step = self.backend.get_currentStep()
 
-        platform = "CPU"
-        hess = self.hess_func(self.backend, self.bias_atom_indices, self.hess_step_size, platform,)
+        # Get Hessian (full or Bofill approximation)
+        hess = self._get_hessian(positions, forces, step)
 
-        w, v = np.linalg.eigh(hess)
-        w_sorted = w.argsort()
-        n = v[:, w_sorted[0]]
-        n /= np.linalg.norm(n)
+        # Compute softest mode (numpy or Lanczos)
+        eigval, n = self._compute_softest_mode(hess)
+
+        # Compute GAD bias force
         forces_b = -np.dot(n, forces_u.flatten()) * n * self.kappa
         # clamping biased forces so their abs value is never larger than `clamp_magnitude`
         forces_b = fclamp(forces_b, self.clamp_magnitude)
 
-        # Logging
-        self._logging(n, w, w_sorted, positions)
+        # Logging (compute full spectrum only if logging is enabled)
+        if self._eval_log is not None:
+            w, v = np.linalg.eigh(hess)
+            w_sorted = w.argsort()
+            self._logging(n, w, w_sorted, positions)
+        else:
+            self._logging(n, None, None, positions)
 
         return forces_b.reshape(forces_u.shape)
 
@@ -527,6 +674,10 @@ class GADESForceUpdater(GADESBias):
         interval: int,
         stability_interval: Optional[int] = None,
         logfile_prefix: Optional[str] = None,
+        eigensolver: str = "numpy",
+        lanczos_iterations: Optional[int] = None,
+        use_bofill_update: bool = False,
+        full_hessian_interval: Optional[int] = None,
     ):
         r"""
         Initialize a GADESForceUpdater for applying Gentlest Ascent Dynamics (GADES) bias forces
@@ -588,6 +739,16 @@ class GADESForceUpdater(GADESBias):
                   - `<prefix>_evec.log`: trajectory of softest-mode eigenvectors
                   - `<prefix>_eval.log`: trajectory of  sorted eigenvalue spectra
                   - `<prefix>_biased_atoms.xyz`: biased atom trajectories in XYZ format
+            eigensolver (str, optional):
+                Method for computing the softest eigenmode. Options:
+                  - ``'numpy'`` (default): Use ``np.linalg.eigh()`` for full eigendecomposition.
+                  - ``'lanczos'``: Use Lanczos iteration to find only the smallest eigenvalue.
+            lanczos_iterations (int, optional):
+                Number of Lanczos iterations when ``eigensolver='lanczos'``.
+            use_bofill_update (bool, optional):
+                If True, use Bofill quasi-Newton updates between full Hessian calculations.
+            full_hessian_interval (int, optional):
+                When ``use_bofill_update=True``, how often (in steps) to compute full Hessian.
 
         Raises:
             TypeError: If `hess_func` is not callable.
@@ -596,6 +757,7 @@ class GADESForceUpdater(GADESBias):
             ValueError: If `clamp_magnitude` is not a positive number.
             ValueError: If `interval` is not a positive integer.
             ValueError: If `stability_interval` is provided but not a positive integer.
+            ValueError: If `eigensolver` is not one of 'numpy' or 'lanczos'.
             OSError: If log files cannot be created when `logfile_prefix` is set.
 
         Warns:
@@ -632,6 +794,10 @@ class GADESForceUpdater(GADESBias):
             interval,
             stability_interval,
             logfile_prefix,
+            eigensolver,
+            lanczos_iterations,
+            use_bofill_update,
+            full_hessian_interval,
         )
             
     def describeNextReport(self, simulation) -> tuple[int, bool, bool, bool, bool, bool]:

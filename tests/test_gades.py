@@ -380,3 +380,272 @@ class TestIsStable:
 
         backend.set_stable(False)
         assert bias._is_stable() is False
+
+
+class TestEigensolverIntegration:
+    """Tests for eigensolver parameter and Lanczos integration."""
+
+    def test_default_eigensolver_is_numpy(self, valid_gades_params):
+        """Default eigensolver should be 'numpy'."""
+        bias = GADESBias(**valid_gades_params)
+        assert bias.eigensolver == 'numpy'
+
+    def test_eigensolver_lanczos(self, valid_gades_params):
+        """Should accept 'lanczos' eigensolver."""
+        params = valid_gades_params.copy()
+        params['eigensolver'] = 'lanczos'
+        bias = GADESBias(**params)
+        assert bias.eigensolver == 'lanczos'
+
+    def test_invalid_eigensolver_raises(self, valid_gades_params):
+        """Invalid eigensolver should raise ValueError."""
+        params = valid_gades_params.copy()
+        params['eigensolver'] = 'invalid'
+        with pytest.raises(ValueError, match="eigensolver must be one of"):
+            GADESBias(**params)
+
+    def test_lanczos_iterations_default(self, valid_gades_params):
+        """Default lanczos_iterations should come from defaults."""
+        from GADES.config import defaults
+        bias = GADESBias(**valid_gades_params)
+        assert bias.lanczos_iterations == defaults["lanczos_iterations"]
+
+    def test_lanczos_iterations_custom(self, valid_gades_params):
+        """Custom lanczos_iterations should be used."""
+        params = valid_gades_params.copy()
+        params['lanczos_iterations'] = 30
+        bias = GADESBias(**params)
+        assert bias.lanczos_iterations == 30
+
+    def test_lanczos_gives_same_direction(self, mock_backend_factory):
+        """Lanczos and numpy should give same softest mode direction."""
+        n_atoms = 5
+        bias_indices = [0, 1, 2, 3, 4]
+
+        # Create a known Hessian with clear smallest eigenvalue
+        def hess_func(backend, atom_indices, step_size, platform):
+            n_dof = len(atom_indices) * 3
+            # Diagonal matrix with distinct eigenvalues
+            return np.diag(np.arange(1, n_dof + 1, dtype=float))
+
+        backend = mock_backend_factory(n_atoms=n_atoms)
+
+        # Test with numpy
+        bias_numpy = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=hess_func,
+            clamp_magnitude=10000.0,
+            kappa=0.9,
+            interval=200,
+            eigensolver='numpy',
+        )
+
+        # Test with lanczos
+        bias_lanczos = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=hess_func,
+            clamp_magnitude=10000.0,
+            kappa=0.9,
+            interval=200,
+            eigensolver='lanczos',
+            lanczos_iterations=15,
+        )
+
+        force_numpy = bias_numpy.get_gad_force()
+        force_lanczos = bias_lanczos.get_gad_force()
+
+        # Forces should be in the same direction (allow for sign flip)
+        force_numpy_flat = force_numpy.flatten()
+        force_lanczos_flat = force_lanczos.flatten()
+
+        # Check if forces are parallel (cosine of angle should be ±1)
+        norm_numpy = np.linalg.norm(force_numpy_flat)
+        norm_lanczos = np.linalg.norm(force_lanczos_flat)
+
+        if norm_numpy > 1e-10 and norm_lanczos > 1e-10:
+            cosine = np.dot(force_numpy_flat, force_lanczos_flat) / (norm_numpy * norm_lanczos)
+            assert abs(abs(cosine) - 1.0) < 0.01  # Should be parallel
+
+
+class TestBofillIntegration:
+    """Tests for Bofill Hessian update integration."""
+
+    def test_bofill_disabled_by_default(self, valid_gades_params):
+        """Bofill should be disabled by default."""
+        bias = GADESBias(**valid_gades_params)
+        assert bias.use_bofill_update is False
+
+    def test_bofill_enabled(self, valid_gades_params):
+        """Should be able to enable Bofill updates."""
+        params = valid_gades_params.copy()
+        params['use_bofill_update'] = True
+        bias = GADESBias(**params)
+        assert bias.use_bofill_update is True
+
+    def test_full_hessian_interval_default(self, valid_gades_params):
+        """Default full_hessian_interval should be interval * multiplier."""
+        from GADES.config import defaults
+        params = valid_gades_params.copy()
+        params['interval'] = 100
+        bias = GADESBias(**params)
+        expected = 100 * defaults["bofill_full_hessian_multiplier"]
+        assert bias.full_hessian_interval == expected
+
+    def test_full_hessian_interval_custom(self, valid_gades_params):
+        """Custom full_hessian_interval should be used."""
+        params = valid_gades_params.copy()
+        params['full_hessian_interval'] = 5000
+        bias = GADESBias(**params)
+        assert bias.full_hessian_interval == 5000
+
+    def test_bofill_state_initialized(self, valid_gades_params):
+        """Bofill state variables should be initialized."""
+        params = valid_gades_params.copy()
+        params['use_bofill_update'] = True
+        bias = GADESBias(**params)
+
+        assert bias._last_hess is None
+        assert bias._last_positions is None
+        assert bias._last_forces is None
+        assert bias._last_hess_step == -1
+
+    def test_bofill_first_call_computes_full_hessian(self, mock_backend_factory):
+        """First call should always compute full Hessian."""
+        n_atoms = 3
+        bias_indices = [0, 1, 2]
+
+        call_count = [0]
+
+        def counting_hess_func(backend, atom_indices, step_size, platform):
+            call_count[0] += 1
+            n_dof = len(atom_indices) * 3
+            return np.eye(n_dof)
+
+        backend = mock_backend_factory(n_atoms=n_atoms)
+        backend.set_currentStep(0)
+
+        bias = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=counting_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=100,
+            use_bofill_update=True,
+            full_hessian_interval=1000,
+        )
+
+        # First call should compute full Hessian
+        bias.get_gad_force()
+        assert call_count[0] == 1
+
+    def test_bofill_uses_approximation_between_intervals(self, mock_backend_factory):
+        """Between full Hessian intervals, Bofill approximation should be used."""
+        n_atoms = 3
+        bias_indices = [0, 1, 2]
+
+        call_count = [0]
+
+        def counting_hess_func(backend, atom_indices, step_size, platform):
+            call_count[0] += 1
+            n_dof = len(atom_indices) * 3
+            return np.eye(n_dof) * (call_count[0] + 1)  # Different each time
+
+        backend = mock_backend_factory(n_atoms=n_atoms)
+
+        bias = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=counting_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=100,
+            use_bofill_update=True,
+            full_hessian_interval=1000,
+        )
+
+        # First call at step 0 - full Hessian
+        backend.set_currentStep(0)
+        bias.get_gad_force()
+        assert call_count[0] == 1
+
+        # Second call at step 100 - should use Bofill (not full Hessian)
+        backend.set_currentStep(100)
+        bias.get_gad_force()
+        assert call_count[0] == 1  # No additional hess_func call
+
+        # Third call at step 200 - should still use Bofill
+        backend.set_currentStep(200)
+        bias.get_gad_force()
+        assert call_count[0] == 1  # Still no additional call
+
+    def test_bofill_recomputes_at_full_interval(self, mock_backend_factory):
+        """At full_hessian_interval, full Hessian should be recomputed."""
+        n_atoms = 3
+        bias_indices = [0, 1, 2]
+
+        call_count = [0]
+
+        def counting_hess_func(backend, atom_indices, step_size, platform):
+            call_count[0] += 1
+            n_dof = len(atom_indices) * 3
+            return np.eye(n_dof)
+
+        backend = mock_backend_factory(n_atoms=n_atoms)
+
+        bias = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=counting_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=100,
+            use_bofill_update=True,
+            full_hessian_interval=500,
+        )
+
+        # First call at step 0 - full Hessian
+        backend.set_currentStep(0)
+        bias.get_gad_force()
+        assert call_count[0] == 1
+
+        # Call at step 500 - should recompute full Hessian
+        backend.set_currentStep(500)
+        bias.get_gad_force()
+        assert call_count[0] == 2
+
+
+class TestComputeSoftestMode:
+    """Tests for _compute_softest_mode helper method."""
+
+    def test_compute_softest_mode_numpy(self, valid_gades_params):
+        """_compute_softest_mode with numpy should return correct values."""
+        bias = GADESBias(**valid_gades_params)
+
+        # Simple diagonal Hessian
+        hess = np.diag([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        eigval, eigvec = bias._compute_softest_mode(hess)
+
+        assert np.isclose(eigval, 1.0)
+        assert np.isclose(np.linalg.norm(eigvec), 1.0)
+
+    def test_compute_softest_mode_lanczos(self, valid_gades_params):
+        """_compute_softest_mode with lanczos should return correct values."""
+        params = valid_gades_params.copy()
+        params['eigensolver'] = 'lanczos'
+        params['lanczos_iterations'] = 10
+        bias = GADESBias(**params)
+
+        # Simple diagonal Hessian
+        hess = np.diag([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        eigval, eigvec = bias._compute_softest_mode(hess)
+
+        assert np.isclose(eigval, 1.0, atol=0.1)
+        assert np.isclose(np.linalg.norm(eigvec), 1.0)

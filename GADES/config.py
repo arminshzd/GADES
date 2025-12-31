@@ -35,4 +35,14 @@ defaults = {
     # OpenMM force group for GADES bias forces.
     # Used to separate GADES forces from other forces in the simulation.
     "gades_force_group": 1,
+
+    # Number of Lanczos iterations for eigenvalue computation.
+    # More iterations give better accuracy but increase computation time.
+    # For most systems, 20 iterations is sufficient.
+    "lanczos_iterations": 20,
+
+    # Multiplier for full Hessian recalculation when using Bofill updates.
+    # Full Hessian is computed every (interval * bofill_full_hessian_multiplier) steps.
+    # For example, if interval=1000 and multiplier=10, full Hessian computed every 10000 steps.
+    "bofill_full_hessian_multiplier": 10,
 }
