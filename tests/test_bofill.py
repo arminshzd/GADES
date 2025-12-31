@@ -100,22 +100,22 @@ class TestBofillMullerBrown:
 
     def test_single_step_approximation(self):
         """Bofill update should improve Hessian approximation."""
-        from GADES.utils import muller_brown_force, muller_brown_hess
+        from GADES.potentials import muller_brown_force, muller_brown_hess
 
         # Starting point
         pos_old = np.array([-0.5, 0.5])
-        H_old = np.array(muller_brown_hess(pos_old.reshape(1, 2))[0])
+        H_old = muller_brown_hess(pos_old)
 
         # Take a small step
         step = np.array([0.01, -0.01])
         pos_new = pos_old + step
 
         # Get gradients (negative of forces)
-        grad_old = -np.array(muller_brown_force(pos_old.reshape(1, 2))[0])
-        grad_new = -np.array(muller_brown_force(pos_new.reshape(1, 2))[0])
+        grad_old = -muller_brown_force(pos_old)
+        grad_new = -muller_brown_force(pos_new)
 
         # Get analytical Hessian at new position
-        H_exact = np.array(muller_brown_hess(pos_new.reshape(1, 2))[0])
+        H_exact = muller_brown_hess(pos_new)
 
         # Bofill update from old Hessian
         H_bofill = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_old)
@@ -133,7 +133,7 @@ class TestBofillMullerBrown:
 
     def test_multiple_steps_convergence(self):
         """Multiple Bofill updates should converge toward exact Hessian."""
-        from GADES.utils import muller_brown_force, muller_brown_hess
+        from GADES.potentials import muller_brown_force, muller_brown_hess
 
         # Start with a poor initial Hessian (identity)
         H = np.eye(2)
@@ -152,14 +152,14 @@ class TestBofillMullerBrown:
         for step in steps:
             pos_old = pos
             pos_new = pos + step
-            grad_old = -np.array(muller_brown_force(pos_old.reshape(1, 2))[0])
-            grad_new = -np.array(muller_brown_force(pos_new.reshape(1, 2))[0])
+            grad_old = -muller_brown_force(pos_old)
+            grad_new = -muller_brown_force(pos_new)
 
             H = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H)
             pos = pos_new
 
         # Final Hessian should be reasonably close to exact
-        H_exact = np.array(muller_brown_hess(pos.reshape(1, 2))[0])
+        H_exact = muller_brown_hess(pos)
 
         # Check that eigenvalues are in the right ballpark
         eigvals_bofill = np.linalg.eigvalsh(H)
@@ -281,15 +281,15 @@ class TestBofillVsBFGS:
 
     def test_near_minimum(self):
         """Near a minimum, both should give similar positive definite Hessians."""
-        from GADES.utils import muller_brown_force, muller_brown_hess
+        from GADES.potentials import muller_brown_force, muller_brown_hess
 
         # Near a minimum of Muller-Brown
         pos_old = np.array([-0.55, 1.44])  # Near minimum A
         step = np.array([0.01, 0.01])
         pos_new = pos_old + step
 
-        grad_old = -np.array(muller_brown_force(pos_old.reshape(1, 2))[0])
-        grad_new = -np.array(muller_brown_force(pos_new.reshape(1, 2))[0])
+        grad_old = -muller_brown_force(pos_old)
+        grad_new = -muller_brown_force(pos_new)
 
         H_init = np.eye(2) * 100  # Start with scaled identity
 
@@ -302,17 +302,17 @@ class TestBofillVsBFGS:
 
     def test_near_saddle(self):
         """Near a saddle, Bofill should capture negative curvature."""
-        from GADES.utils import muller_brown_force, muller_brown_hess
+        from GADES.potentials import muller_brown_force, muller_brown_hess
 
         # Near saddle point
         pos_old = np.array([-0.82, 0.62])
         step = np.array([0.01, 0.0])
         pos_new = pos_old + step
 
-        grad_old = -np.array(muller_brown_force(pos_old.reshape(1, 2))[0])
-        grad_new = -np.array(muller_brown_force(pos_new.reshape(1, 2))[0])
+        grad_old = -muller_brown_force(pos_old)
+        grad_new = -muller_brown_force(pos_new)
 
-        H_exact = np.array(muller_brown_hess(pos_new.reshape(1, 2))[0])
+        H_exact = muller_brown_hess(pos_new)
         np.random.seed(42)
         H_init = H_exact + np.random.randn(2, 2) * 0.1  # Slightly perturbed
         H_init = (H_init + H_init.T) / 2  # Symmetrize

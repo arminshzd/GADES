@@ -262,12 +262,11 @@ class TestLanczosMullerBrown:
 
     def test_muller_brown_hessian(self):
         """Test Lanczos on Muller-Brown Hessian at a known point."""
-        # Import Muller-Brown from utils
-        from GADES.utils import muller_brown_hess
+        from GADES.potentials import muller_brown_hess
 
         # Test at a point on the potential surface
-        pos = np.array([[-0.5, 0.5]])  # Shape (1, 2) for batch interface
-        hess = np.array(muller_brown_hess(pos)[0])  # Get first (only) Hessian
+        pos = np.array([-0.5, 0.5])
+        hess = muller_brown_hess(pos)
 
         # Compare Lanczos vs exact eigenvalues
         eigvals_lanczos, eigvecs_lanczos = lanczos(hess, n_iter=2, seed=42)
@@ -277,11 +276,11 @@ class TestLanczosMullerBrown:
 
     def test_muller_brown_softest_mode(self):
         """Find softest mode of Muller-Brown Hessian."""
-        from GADES.utils import muller_brown_hess
+        from GADES.potentials import muller_brown_hess
 
         # At saddle point, should have one negative eigenvalue
-        saddle = np.array([[-0.822, 0.624]])  # Shape (1, 2) for batch interface
-        hess = np.array(muller_brown_hess(saddle)[0])
+        saddle = np.array([-0.822, 0.624])
+        hess = muller_brown_hess(saddle)
 
         eigval, eigvec = lanczos_smallest(hess, n_iter=2, seed=42)
 

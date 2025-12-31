@@ -122,42 +122,38 @@ class TestClampForceMagnitudes:
 
 
 class TestMullerBrownPotential:
-    """Tests for Muller-Brown potential functions (if they need testing)."""
+    """Tests for Muller-Brown potential functions."""
 
     def test_muller_brown_potential_shape(self):
         """Test that Muller-Brown potential returns correct shape."""
-        from GADES.utils import muller_brown_potential
-        import jax.numpy as jnp
+        from GADES.potentials import muller_brown_potential
 
-        X = jnp.array([[0.0, 0.0], [1.0, 1.0], [-0.5, 0.5]])
+        X = np.array([[0.0, 0.0], [1.0, 1.0], [-0.5, 0.5]])
         result = muller_brown_potential(X)
         assert result.shape == (3,)
 
     def test_muller_brown_force_shape(self):
         """Test that Muller-Brown force returns correct shape."""
-        from GADES.utils import muller_brown_force
-        import jax.numpy as jnp
+        from GADES.potentials import muller_brown_force
 
-        X = jnp.array([[0.0, 0.0], [1.0, 1.0]])
+        X = np.array([[0.0, 0.0], [1.0, 1.0]])
         result = muller_brown_force(X)
         assert result.shape == (2, 2)
 
     def test_muller_brown_hessian_shape(self):
         """Test that Muller-Brown Hessian returns correct shape."""
-        from GADES.utils import muller_brown_hess
-        import jax.numpy as jnp
+        from GADES.potentials import muller_brown_hess
 
-        X = jnp.array([[0.0, 0.0], [1.0, 1.0]])
+        X = np.array([[0.0, 0.0], [1.0, 1.0]])
         result = muller_brown_hess(X)
         assert result.shape == (2, 2, 2)
 
     def test_muller_brown_known_minimum(self):
         """Test potential value at known approximate minimum."""
-        from GADES.utils import muller_brown_potential_base
-        import jax.numpy as jnp
+        from GADES.potentials import muller_brown_potential_base
 
         # One of the minima is approximately at (-0.558, 1.442)
-        x_min = jnp.array([-0.558, 1.442])
+        x_min = np.array([-0.558, 1.442])
         potential = muller_brown_potential_base(x_min)
         # The minimum should have negative potential (deep well)
         assert potential < 0
