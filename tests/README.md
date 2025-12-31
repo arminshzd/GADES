@@ -10,7 +10,7 @@ This document describes the test suite for GADES (Gentlest Ascent Dynamics for E
 | `test_hvp.py` | Hessian-Vector Products | 16 tests |
 | `test_lanczos.py` | Lanczos Eigensolvers | 28 tests |
 | `test_bofill.py` | Hessian Update Algorithms | 17 tests |
-| `test_gades.py` | Core GADESBias | 42 tests |
+| `test_gades.py` | Core GADESBias | 48 tests |
 | `test_validation.py` | Input Validation | 35 tests |
 | `test_utils.py` | Utility Functions | 14 tests |
 | `test_backend.py` | ASE Backend | 24 tests |
@@ -347,8 +347,22 @@ Tests the main GADESBias class that computes and applies bias forces.
 | `test_hvp_epsilon_invalid_raises` | Rejects negative/zero ε | ValueError |
 | `test_lanczos_hvp_computes_softest_mode` | HVP finds same mode as numpy | Aligned eigenvectors |
 | `test_lanczos_hvp_skips_hessian_computation` | HVP path doesn't call hess_func | Zero hess_func calls |
+| `test_lanczos_hvp_with_logging_no_crash` | HVP + logging doesn't crash | No TypeError |
+| `test_lanczos_hvp_logs_eigenvector_but_skips_eigenvalues` | Logs evec/xyz, skips eval | Correct file contents |
+| `test_lanczos_hvp_logging_warning_issued` | Warning issued on init | Warning in log |
 
-**Why it matters**: Verifies the matrix-free path works correctly and truly avoids Hessian computation.
+**Why it matters**: Verifies the matrix-free path works correctly, avoids Hessian computation, and handles logging gracefully.
+
+### TestCloseLogsErrorHandling
+
+**What it tests**: Error handling in `_close_logs()` method.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_close_logs_handles_exception_gracefully` | File close errors warn, don't raise | UserWarning issued |
+| `test_close_logs_skips_already_closed_files` | Idempotent on already-closed files | No exception |
+
+**Why it matters**: Ensures cleanup errors don't mask other exceptions or crash during shutdown.
 
 ### TestBofillIntegration
 

@@ -280,6 +280,13 @@ class GADESBias:
             self._xyz_log.write("# Each frame follows XYZ format: N_atoms, comment, atom lines\n")
             self._xyz_log.write("# Coordinates are in nanometers; atoms are labeled 'C' by default\n")
             self._xyz_log.flush()
+
+            # Warn if eigenvalue logging is unavailable with lanczos_hvp
+            if eigensolver == 'lanczos_hvp':
+                logger.warning(
+                    "Eigenvalue logging unavailable with eigensolver='lanczos_hvp' "
+                    "(no full Hessian computed). Eigenvector and XYZ logging will still work."
+                )
             
     def set_kappa(self, kappa: float) -> None:
         """
@@ -589,7 +596,7 @@ class GADESBias:
         if self._evec_log is not None:
             self._evec_log.write(f"{step} " + " ".join(map(str, n)) + "\n")
             self._evec_log.flush()
-        if self._eval_log is not None:
+        if self._eval_log is not None and w is not None:
             self._eval_log.write(f"{step} " + " ".join(map(str, w[w_sorted])) + "\n")
             self._eval_log.flush()
         if self._xyz_log is not None:
@@ -695,7 +702,7 @@ class GADESBias:
                 try:
                     f.close()
                 except Exception:
-                    raise warnings.warn(f"Failed to close log file {attr} properly.")
+                    warnings.warn(f"Failed to close log file {attr} properly.")
         return None
 
     def __del__(self) -> None:

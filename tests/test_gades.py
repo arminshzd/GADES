@@ -604,6 +604,202 @@ class TestLanczosHVPIntegration:
 
         assert hess_call_count[0] == 0
 
+    def test_lanczos_hvp_with_logging_no_crash(self, mock_backend_factory, tmp_path):
+        """Regression test: lanczos_hvp + logging should not crash (issue #4)."""
+        n_atoms = 1
+        bias_indices = [0]
+
+        def simple_force_func(positions):
+            x = positions.flatten()
+            return -x
+
+        def simple_hess_func(backend, atom_indices, step_size, platform):
+            n_dof = len(atom_indices) * 3
+            return np.eye(n_dof)
+
+        backend = mock_backend_factory(n_atoms=n_atoms)
+        backend.get_forces = simple_force_func
+        backend.set_currentStep(0)
+
+        logfile_prefix = str(tmp_path / "test_hvp_log")
+
+        # This should NOT raise TypeError: 'NoneType' object is not subscriptable
+        bias = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=simple_hess_func,
+            clamp_magnitude=10000.0,
+            kappa=0.9,
+            interval=200,
+            eigensolver='lanczos_hvp',
+            logfile_prefix=logfile_prefix,
+        )
+
+        # This is where the crash would occur before the fix
+        bias.get_gad_force()
+
+        # Clean up
+        bias._close_logs()
+
+    def test_lanczos_hvp_logs_eigenvector_but_skips_eigenvalues(self, mock_backend_factory, tmp_path):
+        """HVP path should log eigenvectors and xyz but skip eigenvalues."""
+        n_atoms = 1
+        bias_indices = [0]
+
+        def simple_force_func(positions):
+            x = positions.flatten()
+            return -x
+
+        def simple_hess_func(backend, atom_indices, step_size, platform):
+            n_dof = len(atom_indices) * 3
+            return np.eye(n_dof)
+
+        backend = mock_backend_factory(n_atoms=n_atoms)
+        backend.get_forces = simple_force_func
+        backend.set_currentStep(100)
+
+        logfile_prefix = str(tmp_path / "test_hvp_log")
+
+        bias = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=simple_hess_func,
+            clamp_magnitude=10000.0,
+            kappa=0.9,
+            interval=200,
+            eigensolver='lanczos_hvp',
+            logfile_prefix=logfile_prefix,
+        )
+
+        bias.get_gad_force()
+        bias._close_logs()
+
+        # Check eigenvector log has data (header + 1 data line)
+        evec_log = tmp_path / "test_hvp_log_evec.log"
+        evec_content = evec_log.read_text()
+        lines = [l for l in evec_content.strip().split('\n') if not l.startswith('#')]
+        assert len(lines) == 1  # One data line
+        assert lines[0].startswith("100 ")  # Step number
+
+        # Check eigenvalue log has only header (no data lines since w=None)
+        eval_log = tmp_path / "test_hvp_log_eval.log"
+        eval_content = eval_log.read_text()
+        eval_lines = [l for l in eval_content.strip().split('\n') if not l.startswith('#')]
+        assert len(eval_lines) == 0  # No data lines
+
+        # Check xyz log has data
+        xyz_log = tmp_path / "test_hvp_log_biased_atoms.xyz"
+        xyz_content = xyz_log.read_text()
+        xyz_lines = [l for l in xyz_content.strip().split('\n') if not l.startswith('#')]
+        assert len(xyz_lines) >= 3  # At least: natoms, comment, atom line
+
+    def test_lanczos_hvp_logging_warning_issued(self, mock_backend_factory, tmp_path, caplog):
+        """HVP + logging should emit warning about eigenvalue logging unavailability."""
+        import logging
+
+        n_atoms = 1
+        bias_indices = [0]
+
+        def simple_hess_func(backend, atom_indices, step_size, platform):
+            return np.eye(3)
+
+        backend = mock_backend_factory(n_atoms=n_atoms)
+        logfile_prefix = str(tmp_path / "test_hvp_warn")
+
+        with caplog.at_level(logging.WARNING, logger="GADES"):
+            bias = GADESBias(
+                backend=backend,
+                biased_force=None,
+                bias_atom_indices=bias_indices,
+                hess_func=simple_hess_func,
+                clamp_magnitude=10000.0,
+                kappa=0.9,
+                interval=200,
+                eigensolver='lanczos_hvp',
+                logfile_prefix=logfile_prefix,
+            )
+
+        assert "Eigenvalue logging unavailable" in caplog.text
+        assert "eigensolver='lanczos_hvp'" in caplog.text
+
+        bias._close_logs()
+
+
+class TestCloseLogsErrorHandling:
+    """Tests for _close_logs error handling."""
+
+    def test_close_logs_handles_exception_gracefully(self, mock_backend_factory, tmp_path):
+        """_close_logs should warn, not raise, when file close fails."""
+        import warnings
+        from unittest.mock import MagicMock, patch
+
+        n_atoms = 1
+        bias_indices = [0]
+
+        def simple_hess_func(backend, atom_indices, step_size, platform):
+            return np.eye(3)
+
+        backend = mock_backend_factory(n_atoms=n_atoms)
+        logfile_prefix = str(tmp_path / "test_close_error")
+
+        bias = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=simple_hess_func,
+            clamp_magnitude=10000.0,
+            kappa=0.9,
+            interval=200,
+            logfile_prefix=logfile_prefix,
+        )
+
+        # Mock one of the file handles to raise on close
+        mock_file = MagicMock()
+        mock_file.closed = False
+        mock_file.close.side_effect = OSError("Mock close error")
+        bias._evec_log = mock_file
+
+        # Should warn but not raise
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            bias._close_logs()
+
+            # Check warning was issued
+            assert len(w) >= 1
+            assert "Failed to close log file" in str(w[0].message)
+
+    def test_close_logs_skips_already_closed_files(self, mock_backend_factory, tmp_path):
+        """_close_logs should skip files that are already closed."""
+        n_atoms = 1
+        bias_indices = [0]
+
+        def simple_hess_func(backend, atom_indices, step_size, platform):
+            return np.eye(3)
+
+        backend = mock_backend_factory(n_atoms=n_atoms)
+        logfile_prefix = str(tmp_path / "test_already_closed")
+
+        bias = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=simple_hess_func,
+            clamp_magnitude=10000.0,
+            kappa=0.9,
+            interval=200,
+            logfile_prefix=logfile_prefix,
+        )
+
+        # Close files manually first
+        bias._evec_log.close()
+        bias._eval_log.close()
+        bias._xyz_log.close()
+
+        # Should not raise when called again
+        bias._close_logs()  # No exception = pass
+
 
 class TestBofillIntegration:
     """Tests for Bofill Hessian update integration."""
