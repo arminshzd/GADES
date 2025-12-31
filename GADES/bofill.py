@@ -19,7 +19,7 @@ Reference:
 import numpy as np
 
 
-def _get_spectral_abs(A):
+def _get_spectral_abs(A: np.ndarray) -> np.ndarray:
     """
     Compute the spectral absolute value of a matrix.
 
@@ -53,7 +53,13 @@ def _get_spectral_abs(A):
         return np.zeros_like(A, dtype=float)
 
 
-def get_bofill_H(pos_new, pos_old, grad_new, grad_old, H):
+def get_bofill_H(
+    pos_new: np.ndarray,
+    pos_old: np.ndarray,
+    grad_new: np.ndarray,
+    grad_old: np.ndarray,
+    H: np.ndarray,
+) -> np.ndarray:
     """
     Bofill's Hessian update algorithm (TS-BFGS method).
 
@@ -132,7 +138,13 @@ def get_bofill_H(pos_new, pos_old, grad_new, grad_old, H):
     return H + E
 
 
-def get_sr1_H(pos_new, pos_old, grad_new, grad_old, H):
+def get_sr1_H(
+    pos_new: np.ndarray,
+    pos_old: np.ndarray,
+    grad_new: np.ndarray,
+    grad_old: np.ndarray,
+    H: np.ndarray,
+) -> np.ndarray:
     """
     Symmetric Rank-1 (SR1) Hessian update.
 
@@ -140,14 +152,14 @@ def get_sr1_H(pos_new, pos_old, grad_new, grad_old, H):
     negative curvature, making it useful for transition state searches.
 
     Args:
-        pos_new (np.ndarray): Positions at time t+dt.
-        pos_old (np.ndarray): Positions at time t.
-        grad_new (np.ndarray): Gradients at time t+dt.
-        grad_old (np.ndarray): Gradients at time t.
-        H (np.ndarray): Hessian matrix at time t.
+        pos_new: Positions at time t+dt.
+        pos_old: Positions at time t.
+        grad_new: Gradients at time t+dt.
+        grad_old: Gradients at time t.
+        H: Hessian matrix at time t.
 
     Returns:
-        np.ndarray: Updated Hessian matrix.
+        Updated Hessian matrix.
 
     Note:
         The SR1 update is skipped if the denominator is too small,
@@ -168,7 +180,13 @@ def get_sr1_H(pos_new, pos_old, grad_new, grad_old, H):
     return H + (residual @ residual.T) / denominator
 
 
-def get_bfgs_H(pos_new, pos_old, grad_new, grad_old, H):
+def get_bfgs_H(
+    pos_new: np.ndarray,
+    pos_old: np.ndarray,
+    grad_new: np.ndarray,
+    grad_old: np.ndarray,
+    H: np.ndarray,
+) -> np.ndarray:
     """
     BFGS (Broyden-Fletcher-Goldfarb-Shanno) Hessian update.
 
@@ -177,17 +195,17 @@ def get_bfgs_H(pos_new, pos_old, grad_new, grad_old, H):
     where negative eigenvalues are expected.
 
     Args:
-        pos_new (np.ndarray): Positions at time t+dt.
-        pos_old (np.ndarray): Positions at time t.
-        grad_new (np.ndarray): Gradients at time t+dt.
-        grad_old (np.ndarray): Gradients at time t.
-        H (np.ndarray): Hessian matrix at time t.
+        pos_new: Positions at time t+dt.
+        pos_old: Positions at time t.
+        grad_new: Gradients at time t+dt.
+        grad_old: Gradients at time t.
+        H: Hessian matrix at time t.
 
     Returns:
-        np.ndarray: Updated Hessian matrix.
+        Updated Hessian matrix.
 
     Note:
-        For transition state searches, use get_bofill_H or get_sr1_H instead,
+        For transition state searches, use ``get_bofill_H`` or ``get_sr1_H`` instead,
         as BFGS enforces positive definiteness.
     """
     d_vec = (pos_new - pos_old).reshape(-1, 1)

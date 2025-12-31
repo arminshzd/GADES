@@ -5,16 +5,20 @@ This module provides NumPy-based implementations of the Lanczos algorithm
 for computing eigenvalues and eigenvectors of symmetric matrices.
 """
 
+from typing import Dict, Optional, Tuple
+
 import numpy as np
 
 
 # Default options for Lanczos iterations
-options = {
+options: Dict[str, int] = {
     "N_ITER": 10,
 }
 
 
-def lanczos(A, n_iter=None, seed=None):
+def lanczos(
+    A: np.ndarray, n_iter: Optional[int] = None, seed: Optional[int] = None
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Lanczos method for calculating eigenvalues and eigenvectors of a symmetric matrix.
 
@@ -103,7 +107,9 @@ def lanczos(A, n_iter=None, seed=None):
     return eigvals, eigvecs
 
 
-def lanczos_smallest(A, n_iter=None, seed=None):
+def lanczos_smallest(
+    A: np.ndarray, n_iter: Optional[int] = None, seed: Optional[int] = None
+) -> Tuple[float, np.ndarray]:
     """
     Find the smallest eigenvalue and corresponding eigenvector using Lanczos.
 
@@ -112,21 +118,26 @@ def lanczos_smallest(A, n_iter=None, seed=None):
     in molecular dynamics applications.
 
     Args:
-        A (np.ndarray): (N, N) symmetric matrix.
-        n_iter (int, optional): Number of Lanczos iterations.
-        seed (int, optional): Random seed for reproducibility.
+        A: ``(N, N)`` symmetric matrix.
+        n_iter: Number of Lanczos iterations.
+        seed: Random seed for reproducibility.
 
     Returns:
-        tuple: (eigenvalue, eigenvector) where:
-            - eigenvalue: float, the smallest eigenvalue
-            - eigenvector: (N,) array, the corresponding normalized eigenvector
+        Tuple of (eigenvalue, eigenvector) where eigenvalue is a float (the smallest
+        eigenvalue) and eigenvector is a ``(N,)`` array (the corresponding normalized
+        eigenvector).
     """
     eigvals, eigvecs = lanczos(A, n_iter=n_iter, seed=seed)
     idx = np.argmin(eigvals)
-    return eigvals[idx], eigvecs[:, idx]
+    return float(eigvals[idx]), eigvecs[:, idx]
 
 
-def lanczos_shift_invert(A, sigma, n_iter=None, seed=None):
+def lanczos_shift_invert(
+    A: np.ndarray,
+    sigma: float,
+    n_iter: Optional[int] = None,
+    seed: Optional[int] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Lanczos method with shift-and-invert to find eigenvalues near a target value.
 

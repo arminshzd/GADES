@@ -1,20 +1,25 @@
 import atexit
 import logging
 import warnings
+from typing import Any, Callable, Optional, Sequence, Tuple, TYPE_CHECKING
+
 import numpy as np
-from typing import Sequence, Callable, Optional
 
 from .config import defaults
 from .utils import clamp_force_magnitudes as fclamp
 
+if TYPE_CHECKING:
+    from .backend import Backend
+
 # Get the GADES logger (configured in __init__.py)
 logger = logging.getLogger("GADES")
+
 
 class GADESBias:
     def __init__(
         self,
-        backend,
-        biased_force,
+        backend: "Backend",
+        biased_force: Any,
         bias_atom_indices: Sequence[int],
         hess_func: Callable,
         clamp_magnitude: float,
@@ -353,7 +358,7 @@ class GADESBias:
         if self.atom_symbols is None:
             self.atom_symbols = self.backend.get_atom_symbols(self.bias_atom_indices)
 
-    def _compute_softest_mode(self, hess: np.ndarray):
+    def _compute_softest_mode(self, hess: np.ndarray) -> Tuple[float, np.ndarray]:
         """
         Compute the smallest eigenvalue and corresponding eigenvector of the Hessian.
 

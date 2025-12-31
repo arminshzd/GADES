@@ -6,11 +6,15 @@ This module provides essential utilities for GADES computations:
 - Force magnitude clamping
 """
 
-from typing import Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence, Tuple, TYPE_CHECKING
+
 import numpy as np
 from scipy.optimize import approx_fprime
 from joblib import Parallel, delayed
 import openmm
+
+if TYPE_CHECKING:
+    from .backend import Backend
 
 
 def get_hessian_fdiff(func: Callable, x0: np.ndarray, epsilon: Optional[float] = 1e-6) -> np.ndarray:
@@ -38,8 +42,9 @@ def get_hessian_fdiff(func: Callable, x0: np.ndarray, epsilon: Optional[float] =
     return hessian_matrix
 
 
-def central_diff_ij(func: Callable, x0: np.ndarray,
-                    i: int, j: int, epsilon: float) -> tuple[int, int, np.ndarray]:
+def central_diff_ij(
+    func: Callable, x0: np.ndarray, i: int, j: int, epsilon: float
+) -> Tuple[int, int, float]:
     """Compute Hessian element H[i,j] using central differences."""
     x_ijp = x0.copy()
     x_ijm = x0.copy()
@@ -130,16 +135,18 @@ def _get_openMM_forces(context: openmm.Context,
     return -forces.flatten()
 
 
-def _get_forces(backend, positions) -> np.ndarray:
+def _get_forces(backend: "Backend", positions: np.ndarray) -> np.ndarray:
     """Get forces from a backend at given positions."""
     return backend.get_forces(positions)
 
 
-def compute_hessian_force_fd_block_parallel(backend,
-                                            atom_indices: Sequence[int],
-                                            epsilon: Optional[float] = 1e-4,
-                                            n_jobs: Optional[int] = -1,
-                                            platform_name: Optional[str] = 'CPU') -> np.ndarray:
+def compute_hessian_force_fd_block_parallel(
+    backend: "Backend",
+    atom_indices: Sequence[int],
+    epsilon: Optional[float] = 1e-4,
+    n_jobs: Optional[int] = -1,
+    platform_name: Optional[str] = 'CPU',
+) -> np.ndarray:
     """
     Compute the Hessian block for a subset of atoms via finite-difference forces.
 
@@ -233,10 +240,12 @@ def compute_hessian_force_fd_block_parallel(backend,
     return hessian_block
 
 
-def compute_hessian_force_fd_block_serial(backend,
-                                          atom_indices: Sequence[int],
-                                          epsilon: Optional[float] = 1e-4,
-                                          platform_name: Optional[str] = 'CPU') -> np.ndarray:
+def compute_hessian_force_fd_block_serial(
+    backend: "Backend",
+    atom_indices: Sequence[int],
+    epsilon: Optional[float] = 1e-4,
+    platform_name: Optional[str] = 'CPU',
+) -> np.ndarray:
     """
     Compute the Hessian block for a subset of atoms via finite-difference forces (serial version).
 
@@ -317,11 +326,13 @@ def compute_hessian_force_fd_block_serial(backend,
     return hessian_block
 
 
-def compute_hessian_force_fd_richardson(backend,
-                                        atom_indices: Sequence[int],
-                                        step_size: Optional[float] = 1e-4,
-                                        platform_name: Optional[str] = 'CPU',
-                                        factors: Optional[Sequence[float]] = None) -> np.ndarray:
+def compute_hessian_force_fd_richardson(
+    backend: "Backend",
+    atom_indices: Sequence[int],
+    step_size: Optional[float] = 1e-4,
+    platform_name: Optional[str] = 'CPU',
+    factors: Optional[Sequence[float]] = None,
+) -> np.ndarray:
     """
     Compute the Hessian block for a subset of atoms using Richardson-extrapolated
     finite differences.
