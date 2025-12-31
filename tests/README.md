@@ -10,7 +10,7 @@ This document describes the test suite for GADES (Gentlest Ascent Dynamics for E
 | `test_hvp.py` | Hessian-Vector Products | 16 tests |
 | `test_lanczos.py` | Lanczos Eigensolvers | 28 tests |
 | `test_bofill.py` | Hessian Update Algorithms | 17 tests |
-| `test_gades.py` | Core GADESBias | 48 tests |
+| `test_gades.py` | Core GADESBias + GADESForceUpdater | 61 tests |
 | `test_validation.py` | Input Validation | 35 tests |
 | `test_utils.py` | Utility Functions | 14 tests |
 | `test_backend.py` | ASE Backend | 24 tests |
@@ -387,6 +387,46 @@ Tests the main GADESBias class that computes and applies bias forces.
 |------|-------------------|------------------|
 | `test_compute_softest_mode_numpy` | numpy eigensolver finds smallest λ | Correct eigenvalue/vector |
 | `test_compute_softest_mode_lanczos` | lanczos eigensolver finds smallest λ | Correct (within tolerance) |
+
+### TestGADESForceUpdaterReporting
+
+**What it tests**: OpenMM Reporter interface (`describeNextReport` method).
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_describe_next_report_returns_correct_tuple` | Returns 6-element tuple (steps, 5 False flags) | Correct format |
+| `test_describe_next_report_returns_steps_to_next_event` | Steps count until next event is correct | Accurate scheduling |
+| `test_describe_next_report_sets_is_biasing_flag` | `is_biasing` set at bias interval | Flag transitions |
+| `test_describe_next_report_sets_check_stability_flag` | `check_stability` set at stability interval | Flag transitions |
+
+**Why it matters**: Verifies the OpenMM reporter scheduling works correctly with MockBackend, enabling testing without OpenMM installed.
+
+### TestGADESForceUpdaterReport
+
+**What it tests**: The `report()` method that applies/removes bias based on flags.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_report_applies_bias_when_is_biasing` | Bias applied when `is_biasing=True` | Backend receives bias forces |
+| `test_report_removes_bias_when_unstable` | Bias removed when system unstable | `remove_bias` called |
+| `test_report_applies_bias_when_stable_and_biasing` | Applies bias when stable + biasing | Both flags handled |
+| `test_report_schedules_post_bias_check` | Post-bias check scheduled after bias | `next_postbias_check_step` set |
+| `test_report_no_action_when_no_flags` | No action when neither flag set | No bias changes |
+
+**Why it matters**: Tests the core reporter logic that drives GADES during OpenMM simulations.
+
+### TestPostBiasScheduling
+
+**What it tests**: Post-bias stability check scheduling mechanism.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_register_next_step_includes_postbias_check` | Post-bias check included in scheduling | Correct step count |
+| `test_postbias_check_sets_check_stability_flag` | `check_stability` set at post-bias step | Flag transitions |
+| `test_postbias_check_clears_after_check` | `next_postbias_check_step` cleared after check | State cleanup |
+| `test_postbias_priority_over_regular_interval` | Post-bias check takes priority | Earliest event wins |
+
+**Why it matters**: Ensures the safety mechanism that checks system stability after applying bias works correctly.
 
 ---
 

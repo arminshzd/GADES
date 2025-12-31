@@ -979,3 +979,370 @@ class TestComputeSoftestMode:
 
         assert np.isclose(eigval, 1.0, atol=0.1)
         assert np.isclose(np.linalg.norm(eigvec), 1.0)
+
+
+class TestGADESForceUpdaterReporting:
+    """Tests for GADESForceUpdater OpenMM reporter interface (describeNextReport)."""
+
+    def test_describe_next_report_returns_correct_tuple(self, mock_backend_factory, simple_hess_func):
+        """describeNextReport should return 6-element tuple with correct format."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_currentStep(0)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=100,
+        )
+
+        # Mock simulation object (describeNextReport doesn't use it directly)
+        mock_simulation = None
+        result = updater.describeNextReport(mock_simulation)
+
+        assert isinstance(result, tuple)
+        assert len(result) == 6
+        assert isinstance(result[0], (int, float))  # steps
+        assert result[1:] == (False, False, False, False, False)  # All flags False
+
+    def test_describe_next_report_returns_steps_to_next_event(self, mock_backend_factory, simple_hess_func):
+        """describeNextReport should return correct number of steps to next event."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_currentStep(50)  # 50 steps until stability check at 100
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=100,
+        )
+
+        result = updater.describeNextReport(None)
+        assert result[0] == 50  # Next event at step 100
+
+    def test_describe_next_report_sets_is_biasing_flag(self, mock_backend_factory, simple_hess_func):
+        """At bias interval, is_biasing flag should be set."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_currentStep(0)  # At bias interval (200 divides 0)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=None,  # No stability checks
+        )
+
+        # At step 0, next event is bias at step 200
+        assert updater.is_biasing is False  # Before call
+        updater.describeNextReport(None)
+        assert updater.is_biasing is True  # After call, at bias interval
+
+    def test_describe_next_report_sets_check_stability_flag(self, mock_backend_factory, simple_hess_func):
+        """At stability interval, check_stability flag should be set."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_currentStep(0)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=100,
+        )
+
+        # At step 0, next event is stability check at step 100
+        assert updater.check_stability is False  # Before call
+        updater.describeNextReport(None)
+        assert updater.check_stability is True  # After call, at stability interval
+
+
+class TestGADESForceUpdaterReport:
+    """Tests for GADESForceUpdater report() method."""
+
+    def test_report_applies_bias_when_is_biasing(self, mock_backend_factory, simple_hess_func):
+        """report() should apply bias when is_biasing=True."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_currentStep(200)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force="mock_force",
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=None,  # No stability checks
+        )
+
+        # Simulate describeNextReport being called at step 0
+        backend.set_currentStep(0)
+        updater.describeNextReport(None)
+        assert updater.is_biasing is True
+
+        # Now call report at step 200 (simulating OpenMM calling after stepping)
+        backend.set_currentStep(200)
+        updater.report(None, None)
+
+        # Bias should have been applied
+        assert backend._last_applied_bias is not None
+        assert updater.is_biasing is False  # Flag cleared after report
+
+    def test_report_removes_bias_when_unstable(self, mock_backend_factory, simple_hess_func):
+        """report() should remove bias when system is unstable."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_stable(False)  # System is unstable
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force="mock_force",
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=100,
+        )
+
+        # Set up for stability check
+        backend.set_currentStep(0)
+        updater.describeNextReport(None)
+        updater.check_stability = True
+
+        # Now call report - should remove bias due to instability
+        backend.set_currentStep(100)
+        updater.report(None, None)
+
+        # Bias should have been removed (backend._last_applied_bias set to None by remove_bias)
+        assert backend._last_applied_bias is None
+        assert updater.check_stability is False  # Flag cleared
+
+    def test_report_applies_bias_when_stable_and_biasing(self, mock_backend_factory, simple_hess_func):
+        """report() should apply bias when stable and is_biasing both set."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_stable(True)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force="mock_force",
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=200,  # Both intervals align
+        )
+
+        # At step 0, both bias and stability check happen at step 200
+        backend.set_currentStep(0)
+        updater.describeNextReport(None)
+
+        # Manually set both flags (as if aligned)
+        updater.is_biasing = True
+        updater.check_stability = True
+
+        # Call report - should apply bias since stable
+        backend.set_currentStep(200)
+        updater.report(None, None)
+
+        assert backend._last_applied_bias is not None
+        assert updater.is_biasing is False
+        assert updater.check_stability is False
+
+    def test_report_schedules_post_bias_check(self, mock_backend_factory, simple_hess_func):
+        """report() should schedule post-bias stability check after applying bias."""
+        from GADES import GADESForceUpdater
+        from GADES.config import defaults
+
+        backend = mock_backend_factory()
+        backend.set_currentStep(200)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force="mock_force",
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=None,
+        )
+
+        # Set up for bias application
+        updater.is_biasing = True
+        assert updater.next_postbias_check_step is None
+
+        # Apply bias
+        updater.report(None, None)
+
+        # Post-bias check should be scheduled
+        expected_step = 200 + defaults["post_bias_check_delay"]
+        assert updater.next_postbias_check_step == expected_step
+
+    def test_report_no_action_when_no_flags(self, mock_backend_factory, simple_hess_func):
+        """report() should do nothing when neither flag is set."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_currentStep(50)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force="mock_force",
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+        )
+
+        # Neither flag is set
+        assert updater.is_biasing is False
+        assert updater.check_stability is False
+
+        # Call report - should do nothing
+        updater.report(None, None)
+
+        # No bias applied or removed
+        assert not hasattr(backend, '_last_applied_bias') or backend._last_applied_bias is None
+
+
+class TestPostBiasScheduling:
+    """Tests for post-bias stability check scheduling."""
+
+    def test_register_next_step_includes_postbias_check(self, mock_backend_factory, simple_hess_func):
+        """Post-bias check should be included in scheduling."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_currentStep(200)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force="mock_force",
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=1000,  # Far away
+            stability_interval=None,
+        )
+
+        # Schedule a post-bias check at step 300
+        updater.next_postbias_check_step = 300
+
+        # register_next_step should return steps to post-bias check
+        steps = updater.register_next_step()
+        assert steps == 100  # 300 - 200 = 100
+
+    def test_postbias_check_sets_check_stability_flag(self, mock_backend_factory, simple_hess_func):
+        """At post-bias check step, check_stability should be set."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_currentStep(200)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force="mock_force",
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=1000,
+            stability_interval=None,
+        )
+
+        # Schedule post-bias check at step 300
+        updater.next_postbias_check_step = 300
+
+        # Move to step 300
+        backend.set_currentStep(300)
+        updater.register_next_step()
+
+        # check_stability should be set because we're at post-bias check
+        assert updater.check_stability is True
+
+    def test_postbias_check_clears_after_check(self, mock_backend_factory, simple_hess_func):
+        """next_postbias_check_step should be cleared after the check."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_stable(True)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force="mock_force",
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=1000,
+            stability_interval=None,
+        )
+
+        # Schedule and reach post-bias check
+        updater.next_postbias_check_step = 300
+        backend.set_currentStep(300)
+
+        # Set check_stability as if register_next_step was called
+        updater.check_stability = True
+
+        # Call report at the post-bias check step
+        updater.report(None, None)
+
+        # Post-bias check should be cleared
+        assert updater.next_postbias_check_step is None
+
+    def test_postbias_priority_over_regular_interval(self, mock_backend_factory, simple_hess_func):
+        """Post-bias check should take priority when it comes first."""
+        from GADES import GADESForceUpdater
+
+        backend = mock_backend_factory()
+        backend.set_currentStep(200)
+
+        updater = GADESForceUpdater(
+            backend=backend,
+            biased_force="mock_force",
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=1000,  # Next bias at 1000
+            stability_interval=500,  # Next stability at 500
+        )
+
+        # Post-bias check at 250 (comes before both)
+        updater.next_postbias_check_step = 250
+
+        steps = updater.register_next_step()
+        assert steps == 50  # 250 - 200 = 50, not 300 (stability) or 800 (bias)
