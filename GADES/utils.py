@@ -185,7 +185,12 @@ def compute_hessian_force_fd_block_parallel(
           ```
           H_ij = d²V / (dx_i dx_j)
           ```
-        - Parallelization is handled with `joblib.Parallel`.
+        - Parallelization uses `joblib.Parallel` with the `'threading'` backend.
+          The `'loky'` (multiprocessing) backend cannot be used because OpenMM/ASE
+          backends contain non-picklable objects (contexts, file handles, etc.).
+        - Due to Python's GIL, threading provides limited speedup for CPU-bound
+          workloads. For most systems, `compute_hessian_force_fd_block_serial` or
+          `compute_hessian_force_fd_richardson` are recommended instead.
         - The final matrix is symmetrized to mitigate finite-difference noise.
 
     Examples:
@@ -225,7 +230,8 @@ def compute_hessian_force_fd_block_parallel(
         return j, df
 
     # Parallel over selected j columns only
-    results = Parallel(n_jobs=n_jobs, backend='loky')(
+    # Use 'threading' backend because OpenMM/ASE backends are not picklable
+    results = Parallel(n_jobs=n_jobs, backend='threading')(
         delayed(compute_block_column)(j) for j in coord_indices
     )
 

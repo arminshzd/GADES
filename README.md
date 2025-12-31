@@ -47,18 +47,20 @@ To use GADES with OpenMM:
     system.addForce(GAD_force)
     ```
 
-3) Append `GADESForceUpdater` to your simulation reporters
+3) Create the backend and append `GADESForceUpdater` to your simulation reporters
 
     ``` python
+    backend = OpenMMBackend(simulation)
     simulation.reporters.append(
         GADESForceUpdater(
-            biased_force=GAD_force, 
+            backend=backend,
+            biased_force=GAD_force,
             bias_atom_indices=biasing_atom_ids,
-            hess_func=hessian, 
+            hess_func=hessian,
             clamp_magnitude=CLAMP_MAGNITUDE,
-            kappa=KAPPA, 
-            interval=BIAS_UPDATE_FREQ, 
-            stability_interval=STABILITY_CHECK_FREQ, 
+            kappa=KAPPA,
+            interval=BIAS_UPDATE_FREQ,
+            stability_interval=STABILITY_CHECK_FREQ,
             logfile_prefix=LOG_PREFIX
             )
         )
