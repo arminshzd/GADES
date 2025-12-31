@@ -52,6 +52,7 @@ nav:
   - Guides:
     - guides/index.md
     - ASE Integration: guides/ase_integration.md
+    - Large Systems: guides/large_systems.md
   - Examples:
     - examples/index.md
     - Müller-Brown: examples/MB_pot.md

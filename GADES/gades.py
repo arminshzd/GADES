@@ -31,6 +31,7 @@ class GADESBias:
         lanczos_iterations: Optional[int] = None,
         use_bofill_update: bool = False,
         full_hessian_interval: Optional[int] = None,
+        hvp_epsilon: Optional[float] = None,
     ):
         r"""
         Initialize a GADESBias for applying Gentlest Ascent Dynamics (GADES) bias forces.
@@ -100,10 +101,16 @@ class GADESBias:
                   - ``'numpy'`` (default): Use ``np.linalg.eigh()`` for full eigendecomposition.
                     Accurate and recommended for small systems (< 500 atoms).
                   - ``'lanczos'``: Use Lanczos iteration to find only the smallest eigenvalue.
-                    Faster for large systems but approximate.
+                    Faster for large systems but approximate. Requires explicit Hessian.
+                  - ``'lanczos_hvp'``: Matrix-free Lanczos using Hessian-vector products via
+                    finite differences. Scales to very large systems (1000+ atoms) by avoiding
+                    explicit Hessian construction. Memory usage O(N) instead of O(N²).
             lanczos_iterations (int, optional):
-                Number of Lanczos iterations when ``eigensolver='lanczos'``.
+                Number of Lanczos iterations when ``eigensolver='lanczos'`` or ``'lanczos_hvp'``.
                 More iterations improve accuracy. Defaults to ``defaults["lanczos_iterations"]``.
+            hvp_epsilon (float, optional):
+                Finite difference step size for Hessian-vector products when using
+                ``eigensolver='lanczos_hvp'``. Defaults to ``defaults["hvp_epsilon"]``.
             use_bofill_update (bool, optional):
                 If True, use Bofill quasi-Newton updates to approximate the Hessian
                 between full Hessian calculations. This reduces computational cost
@@ -185,11 +192,16 @@ class GADESBias:
             )
 
         # Validate eigensolver
-        valid_eigensolvers = ('numpy', 'lanczos')
+        valid_eigensolvers = ('numpy', 'lanczos', 'lanczos_hvp')
         if eigensolver not in valid_eigensolvers:
             raise ValueError(
                 f"eigensolver must be one of {valid_eigensolvers}, got '{eigensolver}'"
             )
+
+        # Validate hvp_epsilon (if provided)
+        if hvp_epsilon is not None:
+            if not isinstance(hvp_epsilon, (int, float, np.number)) or hvp_epsilon <= 0:
+                raise ValueError(f"hvp_epsilon must be a positive number, got {hvp_epsilon}")
 
         # Validate lanczos_iterations (if provided)
         if lanczos_iterations is not None:
@@ -225,6 +237,7 @@ class GADESBias:
         # Eigensolver settings
         self.eigensolver = eigensolver
         self.lanczos_iterations = lanczos_iterations or defaults["lanczos_iterations"]
+        self.hvp_epsilon = hvp_epsilon or defaults["hvp_epsilon"]
 
         # Bofill update settings
         self.use_bofill_update = use_bofill_update
@@ -386,6 +399,79 @@ class GADESBias:
         eigvec = eigvec / np.linalg.norm(eigvec)
         return eigval, eigvec
 
+    def _compute_softest_mode_hvp(self, positions: np.ndarray) -> Tuple[float, np.ndarray]:
+        """
+        Compute the smallest eigenvalue and eigenvector using matrix-free Lanczos with HVP.
+
+        This method uses Hessian-vector products via finite differences, avoiding
+        explicit construction of the full Hessian matrix. This scales as O(N) in
+        memory instead of O(N²), making it suitable for large systems.
+
+        Args:
+            positions (np.ndarray): Full atomic positions, shape (N_atoms, 3).
+
+        Returns:
+            tuple: (eigenvalue, eigenvector) where:
+                - eigenvalue (float): The smallest eigenvalue (softest mode).
+                - eigenvector (np.ndarray): The corresponding normalized eigenvector,
+                  shape (3 * N_bias,).
+
+        Notes:
+            The HVP is computed by displacing only the biased atoms and computing
+            force differences. This requires 2 force evaluations per Lanczos iteration.
+        """
+        from .hvp import finite_difference_hvp
+        from .lanczos import lanczos_hvp_smallest
+
+        n_bias = len(self.bias_atom_indices)
+        n_dof = 3 * n_bias
+
+        # Extract positions of biased atoms
+        bias_positions = positions[self.bias_atom_indices, :].copy()
+
+        def force_func_biased(pos_biased_flat: np.ndarray) -> np.ndarray:
+            """
+            Force function for biased atoms only.
+
+            Takes flattened positions of biased atoms, updates full positions,
+            computes forces via backend, and returns forces on biased atoms.
+            """
+            # Reshape to (N_bias, 3)
+            pos_biased = pos_biased_flat.reshape(-1, 3)
+
+            # Create full positions with displaced biased atoms
+            full_positions = positions.copy()
+            full_positions[self.bias_atom_indices, :] = pos_biased
+
+            # Compute forces via backend (returns negative gradient, flattened)
+            forces_flat = self.backend.get_forces(full_positions)
+
+            # Reshape to (N_atoms, 3) and extract biased atoms
+            forces = forces_flat.reshape(-1, 3)
+            forces_biased = forces[self.bias_atom_indices, :]
+
+            return forces_biased.flatten()
+
+        def hvp_func(v: np.ndarray) -> np.ndarray:
+            """Hessian-vector product for biased atoms."""
+            return finite_difference_hvp(
+                force_func_biased,
+                bias_positions,
+                v.reshape(n_dof),
+                epsilon=self.hvp_epsilon,
+            )
+
+        # Run matrix-free Lanczos
+        eigval, eigvec = lanczos_hvp_smallest(
+            hvp_func,
+            n_dof=n_dof,
+            n_iter=self.lanczos_iterations,
+        )
+
+        # Normalize eigenvector
+        eigvec = eigvec / np.linalg.norm(eigvec)
+        return eigval, eigvec
+
     def _get_hessian(self, positions: np.ndarray, forces: np.ndarray, step: int) -> np.ndarray:
         """
         Get the Hessian matrix, either by full computation or Bofill approximation.
@@ -472,19 +558,22 @@ class GADESBias:
         forces_u = forces[self.bias_atom_indices, :]
         step = self.backend.get_currentStep()
 
-        # Get Hessian (full or Bofill approximation)
-        hess = self._get_hessian(positions, forces, step)
-
-        # Compute softest mode (numpy or Lanczos)
-        eigval, n = self._compute_softest_mode(hess)
+        if self.eigensolver == 'lanczos_hvp':
+            # Matrix-free path: compute softest mode using HVP
+            eigval, n = self._compute_softest_mode_hvp(positions)
+            hess = None  # No Hessian computed
+        else:
+            # Matrix-based path: compute or approximate Hessian
+            hess = self._get_hessian(positions, forces, step)
+            eigval, n = self._compute_softest_mode(hess)
 
         # Compute GAD bias force
         forces_b = -np.dot(n, forces_u.flatten()) * n * self.kappa
         # clamping biased forces so their abs value is never larger than `clamp_magnitude`
         forces_b = fclamp(forces_b, self.clamp_magnitude)
 
-        # Logging (compute full spectrum only if logging is enabled)
-        if self._eval_log is not None:
+        # Logging (compute full spectrum only if logging is enabled and Hessian available)
+        if self._eval_log is not None and hess is not None:
             w, v = np.linalg.eigh(hess)
             w_sorted = w.argsort()
             self._logging(n, w, w_sorted, positions)
@@ -683,6 +772,7 @@ class GADESForceUpdater(GADESBias):
         lanczos_iterations: Optional[int] = None,
         use_bofill_update: bool = False,
         full_hessian_interval: Optional[int] = None,
+        hvp_epsilon: Optional[float] = None,
     ):
         r"""
         Initialize a GADESForceUpdater for applying Gentlest Ascent Dynamics (GADES) bias forces
@@ -748,12 +838,15 @@ class GADESForceUpdater(GADESBias):
                 Method for computing the softest eigenmode. Options:
                   - ``'numpy'`` (default): Use ``np.linalg.eigh()`` for full eigendecomposition.
                   - ``'lanczos'``: Use Lanczos iteration to find only the smallest eigenvalue.
+                  - ``'lanczos_hvp'``: Matrix-free Lanczos using Hessian-vector products.
             lanczos_iterations (int, optional):
-                Number of Lanczos iterations when ``eigensolver='lanczos'``.
+                Number of Lanczos iterations when ``eigensolver='lanczos'`` or ``'lanczos_hvp'``.
             use_bofill_update (bool, optional):
                 If True, use Bofill quasi-Newton updates between full Hessian calculations.
             full_hessian_interval (int, optional):
                 When ``use_bofill_update=True``, how often (in steps) to compute full Hessian.
+            hvp_epsilon (float, optional):
+                Finite difference step size for HVP when using ``eigensolver='lanczos_hvp'``.
 
         Raises:
             TypeError: If `hess_func` is not callable.
@@ -762,7 +855,7 @@ class GADESForceUpdater(GADESBias):
             ValueError: If `clamp_magnitude` is not a positive number.
             ValueError: If `interval` is not a positive integer.
             ValueError: If `stability_interval` is provided but not a positive integer.
-            ValueError: If `eigensolver` is not one of 'numpy' or 'lanczos'.
+            ValueError: If `eigensolver` is not one of 'numpy', 'lanczos', or 'lanczos_hvp'.
             OSError: If log files cannot be created when `logfile_prefix` is set.
 
         Warns:
@@ -803,6 +896,7 @@ class GADESForceUpdater(GADESBias):
             lanczos_iterations,
             use_bofill_update,
             full_hessian_interval,
+            hvp_epsilon,
         )
             
     def describeNextReport(self, simulation: Any) -> tuple[int, bool, bool, bool, bool, bool]:

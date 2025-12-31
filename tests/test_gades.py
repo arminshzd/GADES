@@ -471,6 +471,140 @@ class TestEigensolverIntegration:
             assert abs(abs(cosine) - 1.0) < 0.01  # Should be parallel
 
 
+class TestLanczosHVPIntegration:
+    """Tests for matrix-free Lanczos with HVP integration."""
+
+    def test_eigensolver_lanczos_hvp_accepted(self, valid_gades_params):
+        """Should accept 'lanczos_hvp' eigensolver."""
+        params = valid_gades_params.copy()
+        params['eigensolver'] = 'lanczos_hvp'
+        bias = GADESBias(**params)
+        assert bias.eigensolver == 'lanczos_hvp'
+
+    def test_hvp_epsilon_default(self, valid_gades_params):
+        """Default hvp_epsilon should come from defaults."""
+        from GADES.config import defaults
+        bias = GADESBias(**valid_gades_params)
+        assert bias.hvp_epsilon == defaults["hvp_epsilon"]
+
+    def test_hvp_epsilon_custom(self, valid_gades_params):
+        """Custom hvp_epsilon should be used."""
+        params = valid_gades_params.copy()
+        params['hvp_epsilon'] = 1e-6
+        bias = GADESBias(**params)
+        assert bias.hvp_epsilon == 1e-6
+
+    def test_hvp_epsilon_invalid_raises(self, valid_gades_params):
+        """Invalid hvp_epsilon should raise ValueError."""
+        params = valid_gades_params.copy()
+        params['hvp_epsilon'] = -1e-5
+        with pytest.raises(ValueError, match="hvp_epsilon must be a positive number"):
+            GADESBias(**params)
+
+        params['hvp_epsilon'] = 0
+        with pytest.raises(ValueError, match="hvp_epsilon must be a positive number"):
+            GADESBias(**params)
+
+    def test_lanczos_hvp_computes_softest_mode(self, mock_backend_factory):
+        """lanczos_hvp should compute softest mode similar to numpy."""
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        n_atoms = 1
+        bias_indices = [0]
+        pos = np.array([[0.0, 0.5, 0.0]])  # 2D position padded to 3D
+
+        # Create backend with known positions and forces
+        backend = mock_backend_factory(n_atoms=n_atoms)
+        backend.positions = pos
+        backend.forces = np.zeros_like(pos)
+
+        # Simple quadratic potential for testing
+        # H = diag([1, 2, 3])
+        def simple_hess_func(backend, atom_indices, step_size, platform):
+            return np.diag([1.0, 2.0, 3.0])
+
+        def simple_force_func(positions):
+            # For H = diag([1,2,3]), forces = -H @ x
+            x = positions.flatten()
+            return -np.array([1.0, 2.0, 3.0]) * x
+
+        backend.get_forces = simple_force_func
+
+        # Test with numpy
+        bias_numpy = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=simple_hess_func,
+            clamp_magnitude=10000.0,
+            kappa=0.9,
+            interval=200,
+            eigensolver='numpy',
+        )
+
+        # Test with lanczos_hvp
+        bias_hvp = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=simple_hess_func,  # Not used for HVP, but required
+            clamp_magnitude=10000.0,
+            kappa=0.9,
+            interval=200,
+            eigensolver='lanczos_hvp',
+            lanczos_iterations=10,
+        )
+
+        # Get eigenvalues and eigenvectors
+        hess = simple_hess_func(backend, bias_indices, 0, "CPU")
+        eigval_numpy, eigvec_numpy = bias_numpy._compute_softest_mode(hess)
+        eigval_hvp, eigvec_hvp = bias_hvp._compute_softest_mode_hvp(pos)
+
+        # Smallest eigenvalue should be 1.0
+        assert abs(eigval_numpy - 1.0) < 0.1
+        assert abs(eigval_hvp - 1.0) < 0.1
+
+        # Eigenvectors should be parallel (allow sign flip)
+        cosine = abs(np.dot(eigvec_numpy, eigvec_hvp))
+        assert cosine > 0.9
+
+    def test_lanczos_hvp_skips_hessian_computation(self, mock_backend_factory):
+        """lanczos_hvp should not call hess_func."""
+        n_atoms = 1
+        bias_indices = [0]
+
+        hess_call_count = [0]
+
+        def counting_hess_func(backend, atom_indices, step_size, platform):
+            hess_call_count[0] += 1
+            n_dof = len(atom_indices) * 3
+            return np.eye(n_dof)
+
+        def simple_force_func(positions):
+            x = positions.flatten()
+            return -x  # Simple identity Hessian
+
+        backend = mock_backend_factory(n_atoms=n_atoms)
+        backend.get_forces = simple_force_func
+        backend.set_currentStep(0)
+
+        bias = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=bias_indices,
+            hess_func=counting_hess_func,
+            clamp_magnitude=10000.0,
+            kappa=0.9,
+            interval=200,
+            eigensolver='lanczos_hvp',
+        )
+
+        # Call get_gad_force - should NOT call hess_func
+        bias.get_gad_force()
+
+        assert hess_call_count[0] == 0
+
+
 class TestBofillIntegration:
     """Tests for Bofill Hessian update integration."""
 

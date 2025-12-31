@@ -45,4 +45,9 @@ defaults = {
     # Full Hessian is computed every (interval * bofill_full_hessian_multiplier) steps.
     # For example, if interval=1000 and multiplier=10, full Hessian computed every 10000 steps.
     "bofill_full_hessian_multiplier": 10,
+
+    # Finite difference step size for Hessian-vector product (HVP) computation.
+    # Used when eigensolver='lanczos_hvp'. Smaller values give more accuracy
+    # but may suffer from numerical noise. Default balances accuracy and stability.
+    "hvp_epsilon": 1e-5,
 }

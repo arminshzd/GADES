@@ -410,6 +410,7 @@ class ASEBackend(Backend):
         lanczos_iterations: Optional[int] = None,
         use_bofill_update: bool = False,
         full_hessian_interval: Optional[int] = None,
+        hvp_epsilon: Optional[float] = None,
         target_temperature: Optional[float] = None,
     ) -> "ASEBackend":
         """
@@ -428,10 +429,11 @@ class ASEBackend(Backend):
             interval: Number of steps between bias force updates.
             stability_interval: Steps between stability checks (optional).
             logfile_prefix: Prefix for log files (optional).
-            eigensolver: Method for computing softest eigenmode ('numpy' or 'lanczos').
-            lanczos_iterations: Number of Lanczos iterations (if using 'lanczos').
+            eigensolver: Method for computing softest eigenmode ('numpy', 'lanczos', or 'lanczos_hvp').
+            lanczos_iterations: Number of Lanczos iterations (if using 'lanczos' or 'lanczos_hvp').
             use_bofill_update: Whether to use Bofill Hessian updates.
             full_hessian_interval: Steps between full Hessian recomputation (if using Bofill).
+            hvp_epsilon: Finite difference step size for HVP (if using 'lanczos_hvp').
             target_temperature: Target temperature in Kelvin for stability checking.
 
         Returns:
@@ -471,6 +473,7 @@ class ASEBackend(Backend):
             lanczos_iterations=lanczos_iterations,
             use_bofill_update=use_bofill_update,
             full_hessian_interval=full_hessian_interval,
+            hvp_epsilon=hvp_epsilon,
         )
 
         # Step 2: Create GADESCalculator wrapping the base calculator

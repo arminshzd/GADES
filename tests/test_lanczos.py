@@ -8,7 +8,14 @@ from np.linalg.eigh to verify correctness.
 import numpy as np
 import pytest
 
-from GADES.lanczos import lanczos, lanczos_smallest, lanczos_shift_invert, options
+from GADES.lanczos import (
+    lanczos,
+    lanczos_smallest,
+    lanczos_shift_invert,
+    lanczos_hvp,
+    lanczos_hvp_smallest,
+    options,
+)
 
 
 class TestLanczosBasic:
@@ -288,3 +295,144 @@ class TestLanczosMullerBrown:
 
         # Should find the smallest (most negative) eigenvalue
         assert np.isclose(eigval, np.min(eigvals_exact), atol=1e-8)
+
+
+class TestLanczosHVP:
+    """Test matrix-free Lanczos using matvec products."""
+
+    def test_lanczos_hvp_matches_lanczos(self):
+        """Matrix-free Lanczos should match matrix-based Lanczos."""
+        np.random.seed(777)
+        n = 8
+        B = np.random.randn(n, n)
+        A = (B + B.T) / 2
+
+        # Matrix-based
+        eigvals_mat, eigvecs_mat = lanczos(A, n_iter=n, seed=42)
+
+        # Matrix-free
+        matvec = lambda v: A @ v
+        eigvals_hvp, eigvecs_hvp = lanczos_hvp(matvec, n, n_iter=n, seed=42)
+
+        np.testing.assert_allclose(eigvals_mat, eigvals_hvp, atol=1e-10)
+        np.testing.assert_allclose(np.abs(eigvecs_mat), np.abs(eigvecs_hvp), atol=1e-10)
+
+    def test_lanczos_hvp_diagonal(self):
+        """Matrix-free Lanczos should work on diagonal matrices."""
+        diag = np.array([1.0, 3.0, 5.0, 7.0, 9.0])
+        A = np.diag(diag)
+
+        matvec = lambda v: diag * v  # Efficient matvec for diagonal
+        eigvals, eigvecs = lanczos_hvp(matvec, len(diag), n_iter=5, seed=42)
+
+        # Should recover all eigenvalues
+        np.testing.assert_allclose(np.sort(eigvals), np.sort(diag), atol=1e-10)
+
+    def test_lanczos_hvp_identity(self):
+        """Matrix-free Lanczos on identity should give all 1s."""
+        n = 5
+        matvec = lambda v: v  # Identity
+        eigvals, _ = lanczos_hvp(matvec, n, n_iter=n, seed=42)
+
+        np.testing.assert_allclose(eigvals, np.ones(n), atol=1e-10)
+
+
+class TestLanczosHVPSmallest:
+    """Test lanczos_hvp_smallest convenience function."""
+
+    def test_hvp_smallest_matches_smallest(self):
+        """Matrix-free smallest should match matrix-based."""
+        np.random.seed(888)
+        n = 6
+        B = np.random.randn(n, n)
+        A = (B + B.T) / 2
+
+        eigval_mat, eigvec_mat = lanczos_smallest(A, n_iter=n, seed=42)
+
+        matvec = lambda v: A @ v
+        eigval_hvp, eigvec_hvp = lanczos_hvp_smallest(matvec, n, n_iter=n, seed=42)
+
+        np.testing.assert_allclose(eigval_mat, eigval_hvp, atol=1e-10)
+        # Eigenvectors may differ by sign
+        np.testing.assert_allclose(np.abs(eigvec_mat), np.abs(eigvec_hvp), atol=1e-10)
+
+    def test_hvp_smallest_negative_eigenvalue(self):
+        """Should find negative eigenvalue."""
+        A = np.diag([-5.0, 1.0, 3.0, 7.0])
+        matvec = lambda v: A @ v
+
+        eigval, eigvec = lanczos_hvp_smallest(matvec, 4, n_iter=4, seed=42)
+
+        assert np.isclose(eigval, -5.0, atol=1e-10)
+
+
+class TestLanczosHVPWithFiniteDifference:
+    """Test matrix-free Lanczos with HVP from finite differences."""
+
+    def test_lanczos_hvp_with_muller_brown(self):
+        """Combine matrix-free Lanczos with finite difference HVP."""
+        from GADES.hvp import finite_difference_hvp
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        pos = np.array([-0.5, 0.5])
+        hess_exact = muller_brown_hess(pos)
+
+        # Create HVP function
+        def hvp_func(v):
+            return finite_difference_hvp(muller_brown_force, pos, v)
+
+        # Get eigenvalues via matrix-free Lanczos
+        eigvals_hvp, eigvecs_hvp = lanczos_hvp(hvp_func, 2, n_iter=2, seed=42)
+
+        # Get exact eigenvalues
+        eigvals_exact, _ = np.linalg.eigh(hess_exact)
+
+        np.testing.assert_allclose(
+            np.sort(eigvals_hvp), np.sort(eigvals_exact), rtol=1e-4
+        )
+
+    def test_lanczos_hvp_smallest_muller_brown(self):
+        """Find softest mode using matrix-free approach."""
+        from GADES.hvp import finite_difference_hvp
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Test at saddle point
+        saddle = np.array([-0.822, 0.624])
+        hess_exact = muller_brown_hess(saddle)
+
+        def hvp_func(v):
+            return finite_difference_hvp(muller_brown_force, saddle, v)
+
+        eigval_hvp, eigvec_hvp = lanczos_hvp_smallest(hvp_func, 2, n_iter=2, seed=42)
+
+        eigvals_exact, eigvecs_exact = np.linalg.eigh(hess_exact)
+        eigval_exact = eigvals_exact[0]
+        eigvec_exact = eigvecs_exact[:, 0]
+
+        # Eigenvalue should match
+        np.testing.assert_allclose(eigval_hvp, eigval_exact, rtol=1e-3)
+
+        # Eigenvector direction should match (up to sign)
+        alignment = np.abs(np.dot(eigvec_hvp, eigvec_exact))
+        assert alignment > 0.99, f"Eigenvector alignment {alignment} too low"
+
+    def test_hvp_lanczos_higher_dimensions(self):
+        """Test matrix-free Lanczos in higher dimensions."""
+        from GADES.hvp import finite_difference_hvp
+
+        # Create a simple 6D quadratic potential
+        diag = np.array([1.0, 2.0, -3.0, 4.0, 5.0, 6.0])
+        A = np.diag(diag)
+
+        def force_func(x):
+            return -A @ x.reshape(-1)
+
+        pos = np.zeros(6)
+
+        def hvp_func(v):
+            return finite_difference_hvp(force_func, pos, v)
+
+        eigval, eigvec = lanczos_hvp_smallest(hvp_func, 6, n_iter=10, seed=42)
+
+        # Should find the most negative eigenvalue (-3)
+        np.testing.assert_allclose(eigval, -3.0, rtol=1e-4)
