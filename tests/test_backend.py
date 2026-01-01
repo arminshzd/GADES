@@ -583,3 +583,331 @@ class TestGADESCalculatorPartialBiasing:
             original_forces,
             err_msg="Forces should be unchanged when not applying bias"
         )
+
+
+# ============================================================================
+# OpenMMBackend Tests
+# ============================================================================
+
+# Try to import OpenMM-specific classes
+try:
+    from GADES.backend import OpenMMBackend, _OPENMM_AVAILABLE
+    HAS_OPENMM = _OPENMM_AVAILABLE
+except ImportError:
+    HAS_OPENMM = False
+    OpenMMBackend = None
+
+
+class MockOpenMMQuantity:
+    """Mock OpenMM Quantity for unit handling."""
+
+    def __init__(self, value):
+        self._value = value
+
+    def value_in_unit(self, unit):
+        return self._value
+
+
+class MockOpenMMState:
+    """Mock OpenMM State object."""
+
+    def __init__(self, kinetic_energy=1000.0, positions=None, forces=None):
+        self._kinetic_energy = kinetic_energy
+        self._positions = positions if positions is not None else np.zeros((10, 3))
+        self._forces = forces if forces is not None else np.zeros((10, 3))
+
+    def getKineticEnergy(self):
+        return MockOpenMMQuantity(self._kinetic_energy)
+
+    def getPositions(self, asNumpy=False):
+        if asNumpy:
+            return MockOpenMMQuantity(self._positions)
+        return self._positions
+
+    def getForces(self, asNumpy=False):
+        if asNumpy:
+            return MockOpenMMQuantity(self._forces)
+        return self._forces
+
+
+class MockOpenMMContext:
+    """Mock OpenMM Context object."""
+
+    def __init__(self, kinetic_energy=1000.0, positions=None, forces=None):
+        self._kinetic_energy = kinetic_energy
+        self._positions = positions if positions is not None else np.zeros((10, 3))
+        self._forces = forces if forces is not None else np.zeros((10, 3))
+
+    def getState(self, getEnergy=False, getPositions=False, getForces=False, groups=None):
+        return MockOpenMMState(
+            kinetic_energy=self._kinetic_energy,
+            positions=self._positions,
+            forces=self._forces
+        )
+
+    def setPositions(self, positions):
+        if hasattr(positions, '_value'):
+            self._positions = positions._value
+        else:
+            self._positions = positions
+
+
+class MockOpenMMIntegrator:
+    """Mock OpenMM Integrator."""
+
+    def __init__(self, temperature=None):
+        self._temperature = temperature
+
+    def getTemperature(self):
+        if self._temperature is None:
+            raise AttributeError("This integrator has no temperature")
+        return MockOpenMMQuantity(self._temperature)
+
+
+class MockOpenMMElement:
+    """Mock OpenMM Element."""
+
+    def __init__(self, symbol):
+        self.symbol = symbol
+
+
+class MockOpenMMAtom:
+    """Mock OpenMM Atom."""
+
+    def __init__(self, index, symbol="C"):
+        self.index = index
+        self.element = MockOpenMMElement(symbol)
+
+
+class MockOpenMMTopology:
+    """Mock OpenMM Topology."""
+
+    def __init__(self, n_atoms=10, symbols=None):
+        self._n_atoms = n_atoms
+        self._symbols = symbols if symbols else ["C"] * n_atoms
+
+    def atoms(self):
+        return [MockOpenMMAtom(i, self._symbols[i]) for i in range(self._n_atoms)]
+
+
+class MockOpenMMForce:
+    """Mock OpenMM Force."""
+    pass
+
+
+class MockOpenMMSystem:
+    """Mock OpenMM System."""
+
+    def __init__(self, n_particles=10, n_constraints=0, masses=None, has_cm_remover=False):
+        self._n_particles = n_particles
+        self._n_constraints = n_constraints
+        self._masses = masses if masses else [1.0] * n_particles
+        self._has_cm_remover = has_cm_remover
+
+    def getNumParticles(self):
+        return self._n_particles
+
+    def getNumConstraints(self):
+        return self._n_constraints
+
+    def getParticleMass(self, i):
+        return MockOpenMMQuantity(self._masses[i])
+
+    def getConstraintParameters(self, i):
+        # Return (p1, p2, distance)
+        return (0, 1, 1.0)
+
+    def getNumForces(self):
+        return 1 if self._has_cm_remover else 0
+
+    def getForce(self, i):
+        if self._has_cm_remover:
+            # Return something that would match CMMotionRemover type check
+            return MockOpenMMForce()
+        return MockOpenMMForce()
+
+
+class MockOpenMMSimulation:
+    """Mock OpenMM Simulation object."""
+
+    def __init__(
+        self,
+        n_atoms=10,
+        current_step=0,
+        kinetic_energy=1000.0,
+        integrator_temp=None,
+        n_constraints=0,
+        has_cm_remover=False,
+        symbols=None,
+    ):
+        self.system = MockOpenMMSystem(
+            n_particles=n_atoms,
+            n_constraints=n_constraints,
+            has_cm_remover=has_cm_remover
+        )
+        self.context = MockOpenMMContext(kinetic_energy=kinetic_energy)
+        self.integrator = MockOpenMMIntegrator(temperature=integrator_temp)
+        self.topology = MockOpenMMTopology(n_atoms=n_atoms, symbols=symbols)
+        self.currentStep = current_step
+
+
+@pytest.mark.skipif(not HAS_OPENMM, reason="OpenMM not installed")
+class TestOpenMMBackendInitialization:
+    """Tests for OpenMMBackend initialization."""
+
+    def test_basic_initialization(self):
+        """Test basic OpenMMBackend initialization."""
+        simulation = MockOpenMMSimulation()
+        backend = OpenMMBackend(simulation)
+
+        assert backend.name == "openmm"
+        assert backend.simulation is simulation
+        assert backend.system is simulation.system
+        assert backend.target_temperature is None
+        assert backend._stability_warning_issued is False
+
+    def test_initialization_with_target_temperature(self):
+        """Test initialization with explicit target_temperature."""
+        simulation = MockOpenMMSimulation()
+        backend = OpenMMBackend(simulation, target_temperature=350.0)
+
+        assert backend.target_temperature == 350.0
+
+
+@pytest.mark.skipif(not HAS_OPENMM, reason="OpenMM not installed")
+class TestOpenMMBackendGetTargetTemperature:
+    """Tests for OpenMMBackend._get_target_temperature method."""
+
+    def test_explicit_target_temperature(self):
+        """Explicit target_temperature should be returned."""
+        simulation = MockOpenMMSimulation()
+        backend = OpenMMBackend(simulation, target_temperature=350.0)
+
+        assert backend._get_target_temperature() == 350.0
+
+    def test_langevin_integrator_temperature(self):
+        """Should read temperature from LangevinIntegrator."""
+        simulation = MockOpenMMSimulation(integrator_temp=400.0)
+        backend = OpenMMBackend(simulation)
+
+        assert backend._get_target_temperature() == 400.0
+
+    def test_explicit_overrides_integrator(self):
+        """Explicit target_temperature should override integrator."""
+        simulation = MockOpenMMSimulation(integrator_temp=400.0)
+        backend = OpenMMBackend(simulation, target_temperature=350.0)
+
+        assert backend._get_target_temperature() == 350.0
+
+    def test_no_target_available(self):
+        """Should return None when no target temperature available."""
+        simulation = MockOpenMMSimulation(integrator_temp=None)
+        backend = OpenMMBackend(simulation)
+
+        assert backend._get_target_temperature() is None
+
+
+@pytest.mark.skipif(not HAS_OPENMM, reason="OpenMM not installed")
+class TestOpenMMBackendIsStable:
+    """Tests for OpenMMBackend.is_stable method."""
+
+    def test_no_target_returns_true_with_warning(self):
+        """Without target temperature, should warn and return True."""
+        simulation = MockOpenMMSimulation(integrator_temp=None)
+        backend = OpenMMBackend(simulation)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = backend.is_stable()
+
+            assert result is True
+            assert len(w) == 1
+            assert "target temperature" in str(w[0].message).lower()
+
+    def test_warning_only_issued_once(self):
+        """Warning should only be issued once."""
+        simulation = MockOpenMMSimulation(integrator_temp=None)
+        backend = OpenMMBackend(simulation)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            backend.is_stable()
+            backend.is_stable()
+            backend.is_stable()
+
+            stability_warnings = [x for x in w if "target temperature" in str(x.message).lower()]
+            assert len(stability_warnings) == 1
+
+
+@pytest.mark.skipif(not HAS_OPENMM, reason="OpenMM not installed")
+class TestOpenMMBackendGetCurrentStep:
+    """Tests for OpenMMBackend.get_currentStep method."""
+
+    def test_returns_simulation_current_step(self):
+        """Should return simulation.currentStep."""
+        simulation = MockOpenMMSimulation(current_step=500)
+        backend = OpenMMBackend(simulation)
+
+        assert backend.get_currentStep() == 500
+
+    def test_returns_zero_initially(self):
+        """Should return 0 for new simulation."""
+        simulation = MockOpenMMSimulation(current_step=0)
+        backend = OpenMMBackend(simulation)
+
+        assert backend.get_currentStep() == 0
+
+
+@pytest.mark.skipif(not HAS_OPENMM, reason="OpenMM not installed")
+class TestOpenMMBackendGetAtomSymbols:
+    """Tests for OpenMMBackend.get_atom_symbols method."""
+
+    def test_get_atom_symbols(self):
+        """Should return correct symbols for given indices."""
+        symbols = ["C", "N", "O", "H", "H"]
+        simulation = MockOpenMMSimulation(n_atoms=5, symbols=symbols)
+        backend = OpenMMBackend(simulation)
+
+        result = backend.get_atom_symbols([0, 2, 4])
+        assert result == ["C", "O", "H"]
+
+    def test_get_all_atom_symbols(self):
+        """Should return all symbols when given all indices."""
+        symbols = ["C", "N", "O"]
+        simulation = MockOpenMMSimulation(n_atoms=3, symbols=symbols)
+        backend = OpenMMBackend(simulation)
+
+        result = backend.get_atom_symbols([0, 1, 2])
+        assert result == ["C", "N", "O"]
+
+
+@pytest.mark.skipif(not HAS_OPENMM, reason="OpenMM not installed")
+class TestOpenMMBackendGetPositions:
+    """Tests for OpenMMBackend.get_positions method."""
+
+    def test_get_positions_returns_array(self):
+        """Should return positions as numpy array."""
+        simulation = MockOpenMMSimulation(n_atoms=5)
+        # Set known positions
+        positions = np.array([[1.0, 2.0, 3.0]] * 5)
+        simulation.context._positions = positions
+
+        backend = OpenMMBackend(simulation)
+        result = backend.get_positions()
+
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (5, 3)
+
+
+@pytest.mark.skipif(not HAS_OPENMM, reason="OpenMM not installed")
+class TestOpenMMBackendGetAtoms:
+    """Tests for OpenMMBackend.get_atoms method."""
+
+    def test_get_atoms_returns_iterator(self):
+        """Should return atom iterator from topology."""
+        simulation = MockOpenMMSimulation(n_atoms=5)
+        backend = OpenMMBackend(simulation)
+
+        atoms = list(backend.get_atoms())
+        assert len(atoms) == 5
