@@ -32,7 +32,7 @@ GADES supports [OpenMM](https://openmm.org/) and [ASE](https://ase-lib.org/). Fi
 
 To use GADES with OpenMM:
 
-1) Import the hessian calculation method and the Force biasing method `getGADESBiasForce`:
+1) Import the hessian calculation method and the force biasing method `createGADESBiasForce`:
 
     ``` python
     from GADES.utils import compute_hessian_force_fd_richardson as hessian

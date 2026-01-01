@@ -525,6 +525,6 @@ class ASEBackend(Backend):
         gades_bias.backend = backend
 
         # Step 5: Store reference for user access
-        backend.gades_bias: "GADESBias" = gades_bias
+        backend.gades_bias = gades_bias
 
         return backend

@@ -59,9 +59,9 @@ class GADESBias:
                 Indices of atoms that should receive the bias force.
             hess_func (Callable):
                 A user-supplied function returning the Hessian matrix for the system.
-                Must accept `(system, positions, atom_indices, step_size, platform)`
-                as input and return a 2D array-like Hessian. Choose one of 
-                `GADES.utils.compute_hessian_force_fd_richardson`, 
+                Must accept `(backend, atom_indices, step_size, platform)` as input
+                and return a 2D array-like Hessian. Choose one of
+                `GADES.utils.compute_hessian_force_fd_richardson`,
                 `GADES.utils.compute_hessian_force_fd_block_serial`, or
                 `GADES.utils.compute_hessian_force_fd_block_parallel`. We suggest
                 the Richardson variant.
@@ -552,7 +552,7 @@ class GADESBias:
 
         Notes:
             - The Hessian is computed using `self.hess_func`, which must accept
-              `(system, positions, atom_indices, step_size, platform)` as arguments.
+              `(backend, atom_indices, step_size, platform)` as arguments.
             - The eigenvector associated with the smallest eigenvalue (softest mode)
               is normalized and used to construct the bias direction.
             - Forces are clamped so that the force on each particle does not exceed
@@ -801,14 +801,14 @@ class GADESForceUpdater(GADESBias):
             biased_force:
                 openmm.CustomExternalForce if using the OpenMM backend
                 The OpenMM force object that will receive GADES bias forces.
-                Must be created using `getGADESBiasForce()`.
+                Must be created using `createGADESBiasForce()`.
             bias_atom_indices (Sequence[int]):
                 Indices of atoms that should receive the bias force.
             hess_func (Callable):
                 A user-supplied function returning the Hessian matrix for the system.
-                Must accept `(system, positions, atom_indices, step_size, platform)`
-                as input and return a 2D array-like Hessian. Choose one of 
-                `GADES.utils.compute_hessian_force_fd_richardson`, 
+                Must accept `(backend, atom_indices, step_size, platform)` as input
+                and return a 2D array-like Hessian. Choose one of
+                `GADES.utils.compute_hessian_force_fd_richardson`,
                 `GADES.utils.compute_hessian_force_fd_block_serial`, or
                 `GADES.utils.compute_hessian_force_fd_block_parallel`. We suggest
                 the Richardson variant.
