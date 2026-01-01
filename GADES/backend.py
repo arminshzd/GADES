@@ -156,7 +156,11 @@ class OpenMMBackend(Backend):
         Notes:
             By restricting to ``groups={0}``, the returned forces exclude any
             externally applied bias forces (e.g., from GADES).
+            Original positions are restored after force computation.
         """
+        # Save original positions
+        original_positions = self.get_positions()
+
         positions = positions * openmm.unit.nanometer
         self.simulation.context.setPositions(positions)
         # the `groups` keyword makes sure we're only capturing the forces from the
@@ -164,6 +168,10 @@ class OpenMMBackend(Backend):
         state = self.simulation.context.getState(getForces=True, groups={0})
         forces = state.getForces(asNumpy=True).value_in_unit(
             openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
+
+        # Restore original positions
+        self.simulation.context.setPositions(original_positions * openmm.unit.nanometer)
+
         # negating the forces does not affect the difference between f and f0 calculation in GADES get_gad_force()
         # the hessian calculators use dU/dx = - force for calculations
         return -forces.flatten()
@@ -346,10 +354,20 @@ class ASEBackend(Backend):
         Args:
             positions (np.ndarray):
                 Atomic positions, shaped `(N, 3)`.
+
+        Notes:
+            Original positions are restored after force computation.
         """
+        # Save original positions
+        original_positions = self.atoms.get_positions()
+
         self.atoms.set_positions(positions)
         self.base_calc.calculate(atoms=self.atoms, properties=['forces'], system_changes=all_changes)
         forces = self.base_calc.results['forces']
+
+        # Restore original positions
+        self.atoms.set_positions(original_positions)
+
         # negating the forces does not affect the difference between f and f0 calculation in GADES get_gad_force()
         return -forces.flatten()
 
