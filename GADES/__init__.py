@@ -1,7 +1,8 @@
 import logging
 
 from .config import defaults
-from .gades import GADESForceUpdater, createGADESBiasForce, GADESBias
+from .gades import GADESForceUpdater, GADESBias
+from .backend import createGADESBiasForce
 
 
 class ColorFormatter(logging.Formatter):

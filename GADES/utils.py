@@ -122,42 +122,6 @@ def get_hessian_cdiff_parallel(func: Callable, x0: np.ndarray,
     return hessian
 
 
-def _get_openMM_forces(context: "openmm.Context",  # type: ignore[name-defined]
-                       positions: "openmm.unit.Quantity") -> np.ndarray:  # type: ignore[name-defined]
-    """
-    Compute the original (unbiased) forces from an OpenMM context (internal use only).
-
-    This function updates the context with the provided positions, then retrieves
-    forces from force group `0` only. Group `0` is assumed to correspond to the
-    system's original potential (e.g., the PMF) without additional bias terms.
-    The forces are converted to units of kJ/mol/nm and flattened into a 1D array.
-
-    Args:
-        context (openmm.Context):
-            The OpenMM context containing the current system and integrator state.
-        positions (openmm.unit.Quantity):
-            Atomic positions, shaped `(N, 3)` with distance units compatible with OpenMM.
-
-    Returns:
-        np.ndarray:
-            Flattened force vector of shape `(3 * N,)`, in units of kJ/mol/nm.
-
-    Notes:
-        - By restricting to `groups={0}`, the returned forces exclude any
-          externally applied bias forces (e.g., from GADES).
-        - This function requires OpenMM to be installed.
-    """
-    import openmm
-
-    context.setPositions(positions)
-    # the `groups` keyword makes sure we're only capturing the forces from the
-    # original pmf and not the biased one.
-    state = context.getState(getForces=True, groups={0})
-    forces = state.getForces(asNumpy=True).value_in_unit(
-        openmm.unit.kilojoule_per_mole / openmm.unit.nanometer)
-    return -forces.flatten()
-
-
 def _get_forces(backend: "Backend", positions: np.ndarray) -> np.ndarray:
     """Get forces from a backend at given positions."""
     return backend.get_forces(positions)

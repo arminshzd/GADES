@@ -718,61 +718,6 @@ class GADESBias:
         self._close_logs()
         return None
 
-'''
-    OpenMM specific features
-'''
-def createGADESBiasForce(n_particles: int) -> "CustomExternalForce":  # type: ignore[name-defined]
-    """
-    Create a custom OpenMM force object used for GADES biasing.
-
-    This function constructs an OpenMM `CustomExternalForce` that applies
-    per-particle forces in the form:
-
-    $$F(x, y, z) = f_x * x + f_y * y + f_z * z$$
-
-    where `fx`, `fy`, and `fz` are per-particle parameters that can be updated
-    during a simulation. The force is assigned to group `1` so that it can be
-    easily separated from other forces in analysis or reporting.
-
-    Args:
-        n_particles (int):
-            Number of particles in the system. Each particle will be assigned
-            its own `(fx, fy, fz)` parameter set.
-
-    Returns:
-        openmm.CustomExternalForce:
-            A `CustomExternalForce` object configured with per-particle force
-            parameters for GADES biasing.
-
-    Raises:
-        ValueError: If `n_particles` is not a non-negative integer.
-        ImportError: If OpenMM is not installed.
-
-    Examples:
-        >>> from GADES import createGADESBiasForce
-        >>> system = ...
-        >>> GAD_force = createGADESBiasForce(system.getNumParticles())
-        >>> system.addForce(GAD_force)
-    """
-    try:
-        from openmm import CustomExternalForce
-    except ImportError:
-        raise ImportError(
-            "OpenMM is required for createGADESBiasForce. "
-            "Install with: conda install -c conda-forge openmm"
-        ) from None
-
-    if not isinstance(n_particles, (int, np.integer)) or n_particles < 0:
-        raise ValueError(f"n_particles must be a non-negative integer, got {n_particles}")
-
-    force = CustomExternalForce("fx*x+fy*y+fz*z")
-    force.addPerParticleParameter("fx")
-    force.addPerParticleParameter("fy")
-    force.addPerParticleParameter("fz")
-    for i in range(n_particles):
-        force.addParticle(i, [0.0, 0.0, 0.0])
-    force.setForceGroup(defaults["gades_force_group"])
-    return force
 
 class GADESForceUpdater(GADESBias):
     def __init__(

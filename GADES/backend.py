@@ -360,6 +360,104 @@ class OpenMMBackend(Backend):
         bias_force_object.updateParametersInContext(self.simulation.context)
 
 
+# -----------------------------------------------------------------------------
+# OpenMM-specific utility functions
+# -----------------------------------------------------------------------------
+
+def createGADESBiasForce(n_particles: int) -> "openmm.CustomExternalForce":  # type: ignore[name-defined]
+    """
+    Create a custom OpenMM force object used for GADES biasing.
+
+    This function constructs an OpenMM `CustomExternalForce` that applies
+    per-particle forces in the form:
+
+    $$F(x, y, z) = f_x * x + f_y * y + f_z * z$$
+
+    where `fx`, `fy`, and `fz` are per-particle parameters that can be updated
+    during a simulation. The force is assigned to group `1` so that it can be
+    easily separated from other forces in analysis or reporting.
+
+    Args:
+        n_particles (int):
+            Number of particles in the system. Each particle will be assigned
+            its own `(fx, fy, fz)` parameter set.
+
+    Returns:
+        openmm.CustomExternalForce:
+            A `CustomExternalForce` object configured with per-particle force
+            parameters for GADES biasing.
+
+    Raises:
+        ValueError: If `n_particles` is not a non-negative integer.
+        ImportError: If OpenMM is not installed.
+
+    Examples:
+        >>> from GADES import createGADESBiasForce
+        >>> system = ...
+        >>> GAD_force = createGADESBiasForce(system.getNumParticles())
+        >>> system.addForce(GAD_force)
+    """
+    if not _OPENMM_AVAILABLE:
+        raise ImportError(
+            "OpenMM is required for createGADESBiasForce. "
+            "Install with: conda install -c conda-forge openmm"
+        )
+
+    if not isinstance(n_particles, (int, np.integer)) or n_particles < 0:
+        raise ValueError(f"n_particles must be a non-negative integer, got {n_particles}")
+
+    from openmm import CustomExternalForce
+
+    force = CustomExternalForce("fx*x+fy*y+fz*z")
+    force.addPerParticleParameter("fx")
+    force.addPerParticleParameter("fy")
+    force.addPerParticleParameter("fz")
+    for i in range(n_particles):
+        force.addParticle(i, [0.0, 0.0, 0.0])
+    force.setForceGroup(defaults["gades_force_group"])
+    return force
+
+
+def _get_openMM_forces(
+    context: "openmm.Context",  # type: ignore[name-defined]
+    positions: "openmm.unit.Quantity",  # type: ignore[name-defined]
+) -> np.ndarray:
+    """
+    Compute the original (unbiased) forces from an OpenMM context (internal use only).
+
+    This function updates the context with the provided positions, then retrieves
+    forces from force group `0` only. Group `0` is assumed to correspond to the
+    system's original potential (e.g., the PMF) without additional bias terms.
+    The forces are converted to units of kJ/mol/nm and flattened into a 1D array.
+
+    Args:
+        context (openmm.Context):
+            The OpenMM context containing the current system and integrator state.
+        positions (openmm.unit.Quantity):
+            Atomic positions, shaped `(N, 3)` with distance units compatible with OpenMM.
+
+    Returns:
+        np.ndarray:
+            Flattened force vector of shape `(3 * N,)`, in units of kJ/mol/nm.
+
+    Notes:
+        - By restricting to `groups={0}`, the returned forces exclude any
+          externally applied bias forces (e.g., from GADES).
+        - This function requires OpenMM to be installed.
+    """
+    if not _OPENMM_AVAILABLE:
+        raise ImportError("OpenMM is required for _get_openMM_forces")
+
+    context.setPositions(positions)
+    # the `groups` keyword makes sure we're only capturing the forces from the
+    # original pmf and not the biased one.
+    state = context.getState(getForces=True, groups={0})
+    forces = state.getForces(asNumpy=True).value_in_unit(
+        openmm.unit.kilojoule_per_mole / openmm.unit.nanometer
+    )
+    return -forces.flatten()
+
+
 try:
     from ase.calculators.calculator import Calculator as _Calculator, all_changes as _all_changes
     from ase import Atoms as _Atoms
