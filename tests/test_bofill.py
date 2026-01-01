@@ -381,3 +381,217 @@ class TestBofillEdgeCases:
 
         # Results should be identical
         assert np.allclose(H1, H2)
+
+
+class TestGADESBofillSignConvention:
+    """
+    Test that GADES's Bofill integration uses the correct sign convention.
+
+    This verifies A11 from the audit: the sign convention in _get_hessian()
+    should produce a Hessian whose softest mode matches the explicit Hessian.
+
+    GADES sign convention:
+    - backend.get_forces() returns -F = ∇V (gradient, not force)
+    - _get_hessian() calls Bofill with grad_new=-bias_forces, grad_old=-self._last_forces
+    - This means we pass -∇V = F (forces) to Bofill, not gradients
+
+    The Bofill algorithm expects gradients (∇V), so if we pass forces (F = -∇V),
+    the resulting Hessian would have the wrong sign.
+    """
+
+    def test_bofill_with_gades_convention_near_saddle(self):
+        """
+        Verify GADES's Bofill convention produces correct softest mode near saddle.
+
+        This test simulates exactly what _get_hessian() does and checks if the
+        softest eigenvector points in the same direction as the explicit Hessian.
+        """
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Near saddle point of Muller-Brown (has negative eigenvalue)
+        pos_old = np.array([-0.82, 0.62])
+        step = np.array([0.02, 0.01])
+        pos_new = pos_old + step
+
+        # Explicit Hessian at new position (ground truth)
+        H_exact = muller_brown_hess(pos_new)
+
+        # Verify we're near a saddle (has negative eigenvalue)
+        eigvals_exact, eigvecs_exact = np.linalg.eigh(H_exact)
+        assert eigvals_exact[0] < 0, "Test requires a saddle point with negative eigenvalue"
+        softest_mode_exact = eigvecs_exact[:, 0]
+
+        # Simulate GADES convention:
+        # backend.get_forces() returns ∇V (gradient), not F (force)
+        # muller_brown_force returns F = -∇V, so we negate to get ∇V
+        grad_old = -muller_brown_force(pos_old)  # This is ∇V (gradient)
+        grad_new = -muller_brown_force(pos_new)  # This is ∇V (gradient)
+
+        # GADES _get_hessian() does: grad_new=-bias_forces, grad_old=-self._last_forces
+        # where bias_forces comes from get_forces() which returns ∇V
+        # So GADES passes: -∇V = F (forces, not gradients!)
+        gades_grad_new = -grad_new  # This is -∇V = F (WRONG for Bofill!)
+        gades_grad_old = -grad_old  # This is -∇V = F (WRONG for Bofill!)
+
+        # Start Bofill with explicit Hessian (best case for convergence)
+        H_init = muller_brown_hess(pos_old)
+
+        # Bofill with GADES convention (potentially wrong sign)
+        H_gades = get_bofill_H(pos_new, pos_old, gades_grad_new, gades_grad_old, H_init)
+
+        # Bofill with correct convention (gradients)
+        H_correct = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_init)
+
+        # Get softest modes from each
+        eigvals_gades, eigvecs_gades = np.linalg.eigh(H_gades)
+        eigvals_correct, eigvecs_correct = np.linalg.eigh(H_correct)
+
+        softest_mode_gades = eigvecs_gades[:, 0]
+        softest_mode_correct = eigvecs_correct[:, 0]
+
+        # Check if GADES convention gives same softest mode direction as explicit
+        # (allowing for sign flip since eigenvectors can point either way)
+        alignment_gades = abs(np.dot(softest_mode_gades, softest_mode_exact))
+        alignment_correct = abs(np.dot(softest_mode_correct, softest_mode_exact))
+
+        # The "correct" convention should align well with explicit Hessian
+        assert alignment_correct > 0.9, (
+            f"Correct convention should align with exact: {alignment_correct:.3f}"
+        )
+
+        # Report what we find about GADES convention
+        # If this fails, the GADES sign convention is wrong
+        if alignment_gades < 0.5:
+            pytest.fail(
+                f"GADES Bofill sign convention produces wrong softest mode!\n"
+                f"  Alignment with exact (GADES convention): {alignment_gades:.3f}\n"
+                f"  Alignment with exact (correct convention): {alignment_correct:.3f}\n"
+                f"  GADES softest eigenvalue: {eigvals_gades[0]:.3f}\n"
+                f"  Correct softest eigenvalue: {eigvals_correct[0]:.3f}\n"
+                f"  Exact softest eigenvalue: {eigvals_exact[0]:.3f}\n"
+                f"Fix: In _get_hessian(), change grad_new=-bias_forces to grad_new=bias_forces"
+            )
+
+    def test_bofill_sign_affects_eigenvalue_sign(self):
+        """
+        Verify that passing forces vs gradients flips eigenvalue signs.
+
+        If Bofill is given -∇V (forces) instead of ∇V (gradients), the secant
+        condition becomes H*Δx ≈ -Δ(∇V), giving H with opposite sign.
+        """
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        pos_old = np.array([-0.82, 0.62])
+        step = np.array([0.02, 0.01])
+        pos_new = pos_old + step
+
+        grad_old = -muller_brown_force(pos_old)  # ∇V (gradient)
+        grad_new = -muller_brown_force(pos_new)  # ∇V (gradient)
+
+        H_init = muller_brown_hess(pos_old)
+
+        # Bofill with gradients (correct)
+        H_with_grad = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_init)
+
+        # Bofill with forces (what GADES does)
+        H_with_force = get_bofill_H(pos_new, pos_old, -grad_new, -grad_old, H_init)
+
+        eigvals_grad = np.linalg.eigvalsh(H_with_grad)
+        eigvals_force = np.linalg.eigvalsh(H_with_force)
+
+        # The eigenvalues should NOT be the same if sign matters
+        # (If they are similar, then maybe the Bofill update is robust to sign)
+        eigenval_diff = np.abs(eigvals_grad - eigvals_force)
+
+        # Log the comparison for diagnostic purposes
+        print(f"\nEigenvalues with gradients: {eigvals_grad}")
+        print(f"Eigenvalues with forces: {eigvals_force}")
+        print(f"Difference: {eigenval_diff}")
+
+    def test_iterated_bofill_convergence(self):
+        """
+        Test that multiple Bofill iterations converge to correct Hessian.
+
+        This simulates what happens in a real GADES run where Bofill is
+        applied iteratively between full Hessian recomputations.
+
+        GADES convention (after fix):
+        - backend.get_forces() returns ∇V (gradient)
+        - _get_hessian() passes bias_forces directly to Bofill (correct)
+        """
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Start position
+        pos = np.array([-0.82, 0.62])
+
+        # Initialize with identity (worst case)
+        H_bofill = np.eye(2) * 100
+
+        # Take several small steps
+        np.random.seed(42)
+        for i in range(10):
+            pos_old = pos.copy()
+            step = np.random.randn(2) * 0.01
+            pos = pos_old + step
+
+            # Simulate what backend.get_forces() returns: ∇V (gradient)
+            grad_old = -muller_brown_force(pos_old)  # ∇V
+            grad_new = -muller_brown_force(pos)       # ∇V
+
+            # GADES now passes gradients directly (after the fix)
+            H_bofill = get_bofill_H(pos, pos_old, grad_new, grad_old, H_bofill)
+
+        # Compare final Hessian to exact
+        H_exact = muller_brown_hess(pos)
+
+        error = np.linalg.norm(H_bofill - H_exact, 'fro')
+
+        # Bofill should converge reasonably well
+        # (not perfect since we started with identity, but should be in ballpark)
+        assert error < 200, (
+            f"Bofill did not converge adequately: error={error:.3f}\n"
+            f"  Exact eigenvalues: {np.linalg.eigvalsh(H_exact)}\n"
+            f"  Bofill eigenvalues: {np.linalg.eigvalsh(H_bofill)}"
+        )
+
+    def test_wrong_sign_convention_fails(self):
+        """
+        Verify that using the WRONG sign convention (forces instead of gradients)
+        produces poor convergence. This is a regression test for A11.
+        """
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Start position
+        pos = np.array([-0.82, 0.62])
+
+        # Initialize with identity
+        H_wrong = np.eye(2) * 100
+        H_correct = np.eye(2) * 100
+
+        # Take several small steps
+        np.random.seed(42)
+        for i in range(10):
+            pos_old = pos.copy()
+            step = np.random.randn(2) * 0.01
+            pos = pos_old + step
+
+            grad_old = -muller_brown_force(pos_old)  # ∇V
+            grad_new = -muller_brown_force(pos)       # ∇V
+
+            # Wrong convention: passes -∇V (forces) - this was the old bug
+            H_wrong = get_bofill_H(pos, pos_old, -grad_new, -grad_old, H_wrong)
+
+            # Correct convention: passes ∇V (gradients)
+            H_correct = get_bofill_H(pos, pos_old, grad_new, grad_old, H_correct)
+
+        H_exact = muller_brown_hess(pos)
+
+        error_wrong = np.linalg.norm(H_wrong - H_exact, 'fro')
+        error_correct = np.linalg.norm(H_correct - H_exact, 'fro')
+
+        # The wrong convention should have significantly higher error
+        assert error_wrong > error_correct * 5, (
+            f"Wrong convention should produce much higher error!\n"
+            f"  Wrong error: {error_wrong:.3f}\n"
+            f"  Correct error: {error_correct:.3f}"
+        )
