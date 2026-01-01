@@ -11,7 +11,6 @@ from typing import Callable, Optional, Sequence, Tuple, TYPE_CHECKING
 import numpy as np
 from scipy.optimize import approx_fprime
 from joblib import Parallel, delayed
-import openmm
 
 if TYPE_CHECKING:
     from .backend import Backend
@@ -102,8 +101,8 @@ def get_hessian_cdiff_parallel(func: Callable, x0: np.ndarray,
     return hessian
 
 
-def _get_openMM_forces(context: openmm.Context,
-                       positions: openmm.unit.Quantity) -> np.ndarray:
+def _get_openMM_forces(context: "openmm.Context",  # type: ignore[name-defined]
+                       positions: "openmm.unit.Quantity") -> np.ndarray:  # type: ignore[name-defined]
     """
     Compute the original (unbiased) forces from an OpenMM context (internal use only).
 
@@ -125,7 +124,10 @@ def _get_openMM_forces(context: openmm.Context,
     Notes:
         - By restricting to `groups={0}`, the returned forces exclude any
           externally applied bias forces (e.g., from GADES).
+        - This function requires OpenMM to be installed.
     """
+    import openmm
+
     context.setPositions(positions)
     # the `groups` keyword makes sure we're only capturing the forces from the
     # original pmf and not the biased one.

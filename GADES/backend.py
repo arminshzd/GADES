@@ -2,15 +2,24 @@ import warnings
 from typing import Any, Callable, List, Optional, Sequence, Tuple, TYPE_CHECKING
 
 import numpy as np
-import openmm
-import openmm.app
-from openmm import unit, CMMotionRemover
-from ase.calculators.calculator import Calculator, all_changes
-from ase import Atoms
 
 from .config import defaults
 
+# Conditional OpenMM import
+try:
+    import openmm
+    import openmm.app
+    from openmm import unit as _unit, CMMotionRemover as _CMMotionRemover
+    _OPENMM_AVAILABLE = True
+except ImportError:
+    _OPENMM_AVAILABLE = False
+    openmm = None  # type: ignore[assignment]
+    _unit = None  # type: ignore[assignment]
+    _CMMotionRemover = None  # type: ignore[assignment]
+
 if TYPE_CHECKING:
+    from ase.calculators.calculator import Calculator
+    from ase import Atoms
     from .gades import GADESBias
 
 
@@ -122,12 +131,20 @@ class OpenMMBackend(Backend):
 
     Args:
         simulation: The OpenMM Simulation object.
+
+    Raises:
+        ImportError: If OpenMM is not installed.
     """
 
-    simulation: openmm.app.Simulation
-    system: openmm.System
+    simulation: "openmm.app.Simulation"  # type: ignore[name-defined]
+    system: "openmm.System"  # type: ignore[name-defined]
 
-    def __init__(self, simulation: openmm.app.Simulation) -> None:
+    def __init__(self, simulation: "openmm.app.Simulation") -> None:  # type: ignore[name-defined]
+        if not _OPENMM_AVAILABLE:
+            raise ImportError(
+                "OpenMM is required for OpenMMBackend. "
+                "Install with: conda install -c conda-forge openmm"
+            )
         self.simulation = simulation
         self.system = self.simulation.system
         self.name = "openmm"
@@ -148,16 +165,16 @@ class OpenMMBackend(Backend):
         state = self.simulation.context.getState(getEnergy=True)
 
         for i in range(self.system.getNumParticles()):
-            if self.system.getParticleMass(i) > 0*unit.dalton:
+            if self.system.getParticleMass(i) > 0*_unit.dalton:
                 dof += 3
         for i in range(self.system.getNumConstraints()):
             p1, p2, distance = self.system.getConstraintParameters(i)
-            if self.system.getParticleMass(p1) > 0*unit.dalton or self.system.getParticleMass(p2) > 0*unit.dalton:
+            if self.system.getParticleMass(p1) > 0*_unit.dalton or self.system.getParticleMass(p2) > 0*_unit.dalton:
                 dof -= 1
-        if any(type(self.system.getForce(i)) == CMMotionRemover for i in range(self.system.getNumForces())):
+        if any(type(self.system.getForce(i)) == _CMMotionRemover for i in range(self.system.getNumForces())):
             dof -= 3
-        temperature = (2*state.getKineticEnergy()/(dof*unit.MOLAR_GAS_CONSTANT_R)).value_in_unit(unit.kelvin)
-        target_temperature = self.simulation.integrator.getTemperature().value_in_unit(unit.kelvin)
+        temperature = (2*state.getKineticEnergy()/(dof*_unit.MOLAR_GAS_CONSTANT_R)).value_in_unit(_unit.kelvin)
+        target_temperature = self.simulation.integrator.getTemperature().value_in_unit(_unit.kelvin)
 
         threshold = defaults["stability_threshold_temp_diff"]
         if abs(temperature - target_temperature) > threshold:
@@ -233,7 +250,7 @@ class OpenMMBackend(Backend):
 
     def apply_bias(
         self,
-        bias_force_object: openmm.CustomExternalForce,
+        bias_force_object: "openmm.CustomExternalForce",  # type: ignore[name-defined]
         biased_force_values: np.ndarray,
         bias_atom_indices: Sequence[int],
     ) -> None:
@@ -251,7 +268,7 @@ class OpenMMBackend(Backend):
 
     def remove_bias(
         self,
-        bias_force_object: openmm.CustomExternalForce,
+        bias_force_object: "openmm.CustomExternalForce",  # type: ignore[name-defined]
         bias_atom_indices: Sequence[int],
     ) -> None:
         """
@@ -266,7 +283,18 @@ class OpenMMBackend(Backend):
         bias_force_object.updateParametersInContext(self.simulation.context)
 
 
-class GADESCalculator(Calculator):
+try:
+    from ase.calculators.calculator import Calculator as _Calculator, all_changes as _all_changes
+    from ase import Atoms as _Atoms
+    _ASE_AVAILABLE = True
+except ImportError:
+    _ASE_AVAILABLE = False
+    _Calculator = object  # type: ignore[misc, assignment]
+    _all_changes = []  # type: ignore[assignment]
+    _Atoms = None  # type: ignore[misc, assignment]
+
+
+class GADESCalculator(_Calculator):  # type: ignore[valid-type, misc]
     """
     ASE Calculator wrapper that adds GADES bias forces to an existing ASE Calculator.
 
@@ -274,14 +302,19 @@ class GADESCalculator(Calculator):
         base_calc: The base ASE Calculator to which GADES bias forces will be added.
         gades_force_updater: The GADES force updater object responsible for computing
             and applying bias forces.
+
+    Raises:
+        ImportError: If ASE is not installed.
     """
 
     implemented_properties = ['energy', 'forces']
 
-    base_calc: Calculator
+    base_calc: "Calculator"
     force_updater: Any  # GADESBias, but avoiding circular import
 
-    def __init__(self, base_calc: Calculator, gades_force_updater: Any) -> None:
+    def __init__(self, base_calc: "Calculator", gades_force_updater: Any) -> None:
+        if not _ASE_AVAILABLE:
+            raise ImportError("ASE is required for GADESCalculator. Install with: pip install ase")
         super().__init__()
         self.base_calc = base_calc
         self.force_updater = gades_force_updater
@@ -290,10 +323,12 @@ class GADESCalculator(Calculator):
 
     def calculate(
         self,
-        atoms: Optional[Atoms] = None,
+        atoms: Optional["Atoms"] = None,
         properties: Tuple[str, ...] = ('energy', 'forces'),
-        system_changes: List[str] = all_changes,
+        system_changes: Optional[List[str]] = None,
     ) -> None:
+        if system_changes is None:
+            system_changes = _all_changes
         # Let base calculator do its job
         self.base_calc.calculate(atoms, properties, system_changes)
 
@@ -319,10 +354,13 @@ class ASEBackend(Backend):
             If not provided, the backend will attempt to read it from the integrator
             (works for Langevin, NVTBerendsen, NPTBerendsen). If neither is available,
             stability checking will be skipped with a warning.
+
+    Raises:
+        ImportError: If ASE is not installed.
     """
 
-    base_calc: Calculator
-    atoms: Atoms
+    base_calc: "Calculator"
+    atoms: "Atoms"
     integrator: Any
     current_step: int
     target_temperature: Optional[float]
@@ -332,9 +370,11 @@ class ASEBackend(Backend):
     def __init__(
         self,
         calculator: GADESCalculator,
-        atoms: Atoms,
+        atoms: "Atoms",
         target_temperature: Optional[float] = None,
     ) -> None:
+        if not _ASE_AVAILABLE:
+            raise ImportError("ASE is required for ASEBackend. Install with: pip install ase")
         self.base_calc = calculator.base_calc
         self.atoms = atoms
         atoms.calc = calculator
@@ -417,7 +457,7 @@ class ASEBackend(Backend):
         original_positions = self.atoms.get_positions()
 
         self.atoms.set_positions(positions)
-        self.base_calc.calculate(atoms=self.atoms, properties=['forces'], system_changes=all_changes)
+        self.base_calc.calculate(atoms=self.atoms, properties=['forces'], system_changes=_all_changes)
         forces = self.base_calc.results['forces']
 
         # Restore original positions
@@ -491,8 +531,8 @@ class ASEBackend(Backend):
     @classmethod
     def with_gades(
         cls,
-        atoms: Atoms,
-        base_calc: Calculator,
+        atoms: "Atoms",
+        base_calc: "Calculator",
         bias_atom_indices: Sequence[int],
         hess_func: Callable,
         clamp_magnitude: float,

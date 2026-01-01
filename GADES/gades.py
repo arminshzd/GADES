@@ -720,8 +720,7 @@ class GADESBias:
 '''
     OpenMM specific features
 '''
-from openmm import CustomExternalForce
-def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
+def createGADESBiasForce(n_particles: int) -> "CustomExternalForce":  # type: ignore[name-defined]
     """
     Create a custom OpenMM force object used for GADES biasing.
 
@@ -746,6 +745,7 @@ def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
 
     Raises:
         ValueError: If `n_particles` is not a non-negative integer.
+        ImportError: If OpenMM is not installed.
 
     Examples:
         >>> from GADES import createGADESBiasForce
@@ -753,6 +753,14 @@ def createGADESBiasForce(n_particles: int) -> CustomExternalForce:
         >>> GAD_force = createGADESBiasForce(system.getNumParticles())
         >>> system.addForce(GAD_force)
     """
+    try:
+        from openmm import CustomExternalForce
+    except ImportError:
+        raise ImportError(
+            "OpenMM is required for createGADESBiasForce. "
+            "Install with: conda install -c conda-forge openmm"
+        ) from None
+
     if not isinstance(n_particles, (int, np.integer)) or n_particles < 0:
         raise ValueError(f"n_particles must be a non-negative integer, got {n_particles}")
 
