@@ -167,6 +167,28 @@ The parameters of the `GADESBias` constructor are:
 * `full_hessian_interval`: Steps between full Hessian recomputations when using Bofill (default: 10 × interval).
 
 
+## Development
+
+To set up a development environment:
+
+``` bash
+git clone https://github.com/arminshzd/GADES.git
+cd GADES
+pip install -e ".[dev]"
+```
+
+To run the test suite:
+
+``` bash
+pytest
+```
+
+To run tests with coverage:
+
+``` bash
+pytest --cov=GADES --cov-report=term-missing
+```
+
 ### Disclaimer
 
 This repo is still under active development.
