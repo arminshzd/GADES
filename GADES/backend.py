@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 class Backend:
     """
     A generic interface for the backends to be used with GADES.
+
+    Subclasses must implement all methods that raise ``NotImplementedError``.
+    Methods with default implementations (``is_stable``, ``get_currentStep``)
+    may be overridden if the backend provides more accurate information.
     """
 
     name: str
@@ -25,13 +29,34 @@ class Backend:
         self.name = ""
 
     def is_stable(self) -> bool:
+        """
+        Check if the simulation is numerically stable.
+
+        Returns:
+            bool: True if stable. Default implementation always returns True.
+        """
         return True
 
     def get_currentStep(self) -> int:
+        """
+        Get the current simulation step number.
+
+        Returns:
+            int: Current step count. Default implementation returns 0.
+        """
         return 0
 
     def get_atom_symbols(self, bias_atom_indices: Sequence[int]) -> List[str]:
-        return []
+        """
+        Get the chemical symbols for the specified atoms.
+
+        Args:
+            bias_atom_indices: Indices of atoms to get symbols for.
+
+        Returns:
+            List[str]: Chemical symbols for each atom.
+        """
+        raise NotImplementedError
 
     def get_positions(self) -> np.ndarray:
         """
@@ -43,9 +68,24 @@ class Backend:
         raise NotImplementedError
 
     def get_current_state(self) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Get the current positions and forces.
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: (positions, forces) arrays.
+        """
         raise NotImplementedError
 
     def get_forces(self, positions: np.ndarray) -> np.ndarray:
+        """
+        Compute forces at the given positions.
+
+        Args:
+            positions: Atom positions with shape ``(N, 3)``.
+
+        Returns:
+            np.ndarray: Forces array with shape ``(N, 3)``.
+        """
         raise NotImplementedError
 
     def apply_bias(
@@ -54,12 +94,27 @@ class Backend:
         biased_force_values: np.ndarray,
         bias_atom_indices: Sequence[int],
     ) -> None:
-        pass
+        """
+        Apply bias forces to the specified atoms.
+
+        Args:
+            bias_force_object: Backend-specific force object.
+            biased_force_values: Bias force values with shape ``(M, 3)``.
+            bias_atom_indices: Indices of atoms to bias.
+        """
+        raise NotImplementedError
 
     def remove_bias(
         self, bias_force_object: Any, bias_atom_indices: Sequence[int]
     ) -> None:
-        pass
+        """
+        Remove bias forces from the specified atoms.
+
+        Args:
+            bias_force_object: Backend-specific force object.
+            bias_atom_indices: Indices of atoms to unbias.
+        """
+        raise NotImplementedError
     
 class OpenMMBackend(Backend):
     """
