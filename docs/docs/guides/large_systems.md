@@ -217,7 +217,7 @@ The benchmark reports time, memory, and eigenvalue accuracy. However, note that:
     In GADES, the eigenvector direction is **essential** for correct bias force computation:
 
     ```
-    F_GAD = F - 2 * (F · n) * n
+    F_GAD = F - \kappa * (F · n) * n
     ```
 
     If the eigenvector `n` is inaccurate, the bias force will point in the wrong direction, preventing the system from correctly ascending toward the saddle point.

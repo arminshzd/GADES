@@ -17,8 +17,6 @@ license = { text = "MIT" }
 dependencies = [
     "numpy",
     "scipy",
-    "jax",
-    "openmm",
     "joblib"
 ]
 
