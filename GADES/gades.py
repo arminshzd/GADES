@@ -167,6 +167,16 @@ class GADESBias:
         if not all(isinstance(i, (int, np.integer)) and i >= 0 for i in bias_atom_indices):
             raise ValueError("All bias_atom_indices must be non-negative integers")
 
+        # Bounds check against system size (skip if backend is None for testing)
+        if backend is not None:
+            n_atoms = len(backend.get_positions())
+            max_index = max(bias_atom_indices)
+            if max_index >= n_atoms:
+                raise ValueError(
+                    f"bias_atom_indices contains index {max_index}, but system only has "
+                    f"{n_atoms} atoms (valid range: 0 to {n_atoms - 1})"
+                )
+
         # Validate clamp_magnitude
         if not isinstance(clamp_magnitude, (int, float, np.number)) or clamp_magnitude <= 0:
             raise ValueError(f"clamp_magnitude must be a positive number, got {clamp_magnitude}")

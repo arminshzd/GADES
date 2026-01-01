@@ -194,6 +194,34 @@ class TestGADESBiasValidation:
                 interval=200,
             )
 
+    def test_out_of_bounds_bias_atom_indices(self, valid_hess_func, mock_backend):
+        """Indices exceeding system size should raise ValueError."""
+        # mock_backend has 10 atoms (indices 0-9 valid)
+        with pytest.raises(ValueError, match="index 100.*only has 10 atoms"):
+            GADESBias(
+                backend=mock_backend,
+                biased_force=None,
+                bias_atom_indices=[0, 1, 100],  # 100 is out of bounds
+                hess_func=valid_hess_func,
+                clamp_magnitude=1000.0,
+                kappa=0.9,
+                interval=200,
+            )
+
+    def test_valid_max_index_bias_atom_indices(self, valid_hess_func, mock_backend):
+        """Index at system boundary (n_atoms - 1) should work."""
+        # mock_backend has 10 atoms (indices 0-9 valid)
+        bias = GADESBias(
+            backend=mock_backend,
+            biased_force=None,
+            bias_atom_indices=[0, 5, 9],  # 9 is the last valid index
+            hess_func=valid_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+        )
+        assert list(bias.bias_atom_indices) == [0, 5, 9]
+
     # --- clamp_magnitude validation ---
 
     def test_valid_clamp_magnitude(self, valid_hess_func):
