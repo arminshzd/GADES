@@ -486,3 +486,255 @@ class TestGADESIntegration:
             bias, expected_bias, rtol=1e-3,
             err_msg="Full GADES cycle produces incorrect bias"
         )
+
+
+# =============================================================================
+# Regression Tests: Numerical Verification
+# =============================================================================
+
+class TestSignConventionRegression:
+    """
+    Regression tests that verify the sign convention fix numerically.
+
+    These tests would have caught the original bugs where:
+    - get_forces() returned gradients instead of forces
+    - Hessian had wrong sign
+    - Bias had wrong direction
+    - lanczos_hvp found wrong eigenmode
+    """
+
+    def test_hessian_positive_eigenvalues_at_minimum(self):
+        """
+        Regression Test 1: Hessian has positive eigenvalues at a minimum.
+
+        For V = 0.5 * k * x^2 (harmonic potential):
+        - H = ∇²V = k (positive, indicating a minimum)
+
+        If this test fails, the Hessian sign is wrong.
+        """
+        from GADES.utils import compute_hessian_force_fd_richardson
+
+        class SimpleHarmonicBackend:
+            def __init__(self, k=3.0):
+                self.k = k
+                self._pos = np.array([[1.0, 0.5, 0.0]])
+
+            def get_positions(self):
+                return self._pos.copy()
+
+            def get_forces(self, pos):
+                # F = -∇V = -k*x (force toward origin)
+                return (-self.k * pos).flatten()
+
+        backend = SimpleHarmonicBackend(k=3.0)
+        H = compute_hessian_force_fd_richardson(backend, [0], step_size=1e-4)
+
+        # Verify diagonal elements equal k
+        np.testing.assert_allclose(
+            np.diag(H), [3.0, 3.0, 3.0], rtol=1e-3,
+            err_msg="Hessian diagonal should equal spring constant k"
+        )
+
+        # Verify all eigenvalues are positive (minimum)
+        eigenvalues = np.linalg.eigvalsh(H)
+        assert np.all(eigenvalues > 0), (
+            f"At a minimum, all Hessian eigenvalues must be positive. "
+            f"Got: {eigenvalues}"
+        )
+
+    def test_bias_formula_minus_kappa_f_dot_n_n(self):
+        """
+        Regression Test 2: Bias force equals -κ(F·n)n.
+
+        The GADES bias should be:
+        - bias = -κ(F·n)n
+
+        If this test fails, the bias sign convention is wrong.
+        """
+        class QuadraticTestBackend:
+            def __init__(self):
+                self._pos = np.array([[1.0, 0.5, 0.2]])
+                self._step = 0
+
+            def get_positions(self):
+                return self._pos.copy()
+
+            def get_forces(self, pos):
+                # F = -H @ x where H = diag([1, 4, 9])
+                k = np.array([1.0, 4.0, 9.0])
+                return (-k * pos.flatten())
+
+            def get_current_state(self):
+                return self._pos.copy(), self.get_forces(self._pos).reshape(-1, 3)
+
+            def get_currentStep(self):
+                return self._step
+
+            def get_atom_symbols(self, indices):
+                return ['C'] * len(indices)
+
+            def is_stable(self):
+                return True
+
+        def known_hess(backend, indices, step, platform):
+            return np.diag([1.0, 4.0, 9.0])
+
+        backend = QuadraticTestBackend()
+        kappa = 0.9
+
+        gades = GADESBias(
+            backend=backend,
+            biased_force=MockBiasForceObject(),
+            bias_atom_indices=[0],
+            hess_func=known_hess,
+            clamp_magnitude=1000.0,
+            kappa=kappa,
+            interval=1,
+            stability_interval=1,
+            logfile_prefix=None,
+        )
+
+        F = backend.get_forces(backend.get_positions())
+        bias = gades.get_gad_force().flatten()
+
+        # Softest mode is first eigenvector (smallest eigenvalue = 1)
+        n = np.array([1.0, 0.0, 0.0])
+        F_dot_n = np.dot(F, n)
+        expected_bias = -kappa * F_dot_n * n
+
+        np.testing.assert_allclose(
+            bias, expected_bias, rtol=1e-4,
+            err_msg=f"Bias should be -κ(F·n)n. Got {bias}, expected {expected_bias}"
+        )
+
+    def test_force_reduction_factor_one_minus_kappa(self):
+        """
+        Regression Test 3: Total force reduced by factor (1-κ) along softest mode.
+
+        After applying bias:
+        - (F + bias)·n = F·n - κ(F·n) = (1-κ)(F·n)
+
+        With κ=0.9, the force component should be reduced to 10%.
+        If this test fails, the bias is enhancing instead of reducing.
+        """
+        class QuadraticTestBackend:
+            def __init__(self):
+                self._pos = np.array([[1.0, 0.5, 0.2]])
+                self._step = 0
+
+            def get_positions(self):
+                return self._pos.copy()
+
+            def get_forces(self, pos):
+                k = np.array([1.0, 4.0, 9.0])
+                return (-k * pos.flatten())
+
+            def get_current_state(self):
+                return self._pos.copy(), self.get_forces(self._pos).reshape(-1, 3)
+
+            def get_currentStep(self):
+                return self._step
+
+            def get_atom_symbols(self, indices):
+                return ['C'] * len(indices)
+
+            def is_stable(self):
+                return True
+
+        def known_hess(backend, indices, step, platform):
+            return np.diag([1.0, 4.0, 9.0])
+
+        backend = QuadraticTestBackend()
+        kappa = 0.9
+
+        gades = GADESBias(
+            backend=backend,
+            biased_force=MockBiasForceObject(),
+            bias_atom_indices=[0],
+            hess_func=known_hess,
+            clamp_magnitude=1000.0,
+            kappa=kappa,
+            interval=1,
+            stability_interval=1,
+            logfile_prefix=None,
+        )
+
+        F = backend.get_forces(backend.get_positions())
+        bias = gades.get_gad_force().flatten()
+        total_F = F + bias
+
+        n = np.array([1.0, 0.0, 0.0])
+        original_component = np.dot(F, n)
+        final_component = np.dot(total_F, n)
+
+        # Reduction factor should be (1 - kappa) = 0.1
+        reduction_factor = final_component / original_component
+
+        np.testing.assert_allclose(
+            reduction_factor, 1 - kappa, rtol=1e-4,
+            err_msg=f"Force should be reduced by factor (1-κ)={1-kappa}. "
+                    f"Got reduction factor {reduction_factor}"
+        )
+
+        # Also verify the absolute reduction
+        assert abs(final_component) < abs(original_component), (
+            "Bias should REDUCE force component, not enhance it"
+        )
+
+    def test_lanczos_hvp_matches_numpy_eigensolver(self):
+        """
+        Regression Test 4: Lanczos HVP finds same eigenvalue as numpy.
+
+        The matrix-free Lanczos method using HVP should find the same
+        smallest eigenvalue and eigenvector as explicit diagonalization.
+
+        If this test fails, the HVP sign convention is wrong.
+        """
+        from GADES.hvp import finite_difference_hvp
+        from GADES.lanczos import lanczos_hvp_smallest
+
+        class MultiAtomBackend:
+            def __init__(self):
+                self._pos = np.array([[0.5, 0.3, 0.1], [0.2, 0.4, 0.3]])
+
+            def get_positions(self):
+                return self._pos.copy()
+
+            def get_forces(self, pos):
+                # F = -H @ x where H = diag([1, 2, 3, 4, 5, 6])
+                H_diag = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+                return -H_diag * pos.flatten()
+
+        backend = MultiAtomBackend()
+        pos = backend.get_positions()
+
+        # Numpy eigensolver (ground truth)
+        H = np.diag([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        eigvals, eigvecs = np.linalg.eigh(H)
+        numpy_eigval = eigvals[0]
+        numpy_eigvec = eigvecs[:, 0]
+
+        # HVP-based Lanczos
+        def force_func(p):
+            return backend.get_forces(p.reshape(-1, 3))
+
+        def hvp_func(v):
+            return finite_difference_hvp(force_func, pos, v, epsilon=1e-5)
+
+        lanczos_eigval, lanczos_eigvec = lanczos_hvp_smallest(
+            hvp_func, n_dof=6, n_iter=20
+        )
+        lanczos_eigvec = lanczos_eigvec / np.linalg.norm(lanczos_eigvec)
+
+        # Eigenvalues should match
+        np.testing.assert_allclose(
+            lanczos_eigval, numpy_eigval, rtol=0.1,
+            err_msg=f"Lanczos eigenvalue {lanczos_eigval} != numpy {numpy_eigval}"
+        )
+
+        # Eigenvectors should be aligned (allowing for sign flip)
+        alignment = abs(np.dot(numpy_eigvec, lanczos_eigvec))
+        assert alignment > 0.99, (
+            f"Eigenvectors not aligned: alignment = {alignment}. "
+            f"HVP sign convention may be wrong."
+        )
