@@ -32,6 +32,9 @@ class MockBackend:
     def get_atom_symbols(self, bias_atom_indices):
         return ["C"] * len(bias_atom_indices)
 
+    def get_positions(self):
+        return self._positions.copy()
+
     def get_current_state(self):
         return self._positions.copy(), self._forces.copy()
 

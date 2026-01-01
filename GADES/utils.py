@@ -200,7 +200,7 @@ def compute_hessian_force_fd_block_parallel(
         >>> hess_block.shape
         (9, 9)
     """
-    positions_array, _ = backend.get_current_state()
+    positions_array = backend.get_positions()
     n_atoms = len(positions_array)
 
     # Map atom indices to coordinate indices
@@ -213,17 +213,16 @@ def compute_hessian_force_fd_block_parallel(
     m_dof = len(coord_indices)
 
     def compute_block_column(j):
-        # Reference forces (full, but we'll slice)
-        positions_array, forces_u = backend.get_current_state()
-        f0 = forces_u[coord_indices]
+        # Reference forces (unbiased, flattened)
+        # positions_array is captured from outer scope
+        f0 = backend.get_forces(positions_array)[coord_indices]
 
         # Perturb along coordinate j
-        perturbed_pos = positions_array.flatten()
+        perturbed_pos = positions_array.flatten().copy()
         perturbed_pos[j] += epsilon
         perturbed_pos = perturbed_pos.reshape((-1, 3))
 
-        f_perturbed = backend.get_forces(perturbed_pos)
-        f_perturbed = f_perturbed[coord_indices]
+        f_perturbed = backend.get_forces(perturbed_pos)[coord_indices]
 
         df = (f_perturbed - f0) / epsilon
 
@@ -295,7 +294,7 @@ def compute_hessian_force_fd_block_serial(
         >>> hess_block.shape
         (6, 6)
     """
-    positions_array, forces_u = backend.get_current_state()
+    positions_array = backend.get_positions()
     n_atoms = len(positions_array)
 
     # Map atom indices to coordinate indices
@@ -395,7 +394,7 @@ def compute_hessian_force_fd_richardson(
     if factors is None:
         factors = [1.0, 0.5, 0.25]  # Default: up to third order
 
-    positions_array, forces_u = backend.get_current_state()
+    positions_array = backend.get_positions()
     n_atoms = len(positions_array)
 
     if atom_indices is None:

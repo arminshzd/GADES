@@ -443,3 +443,143 @@ class TestASEBackendWithGades:
         backend = ASEBackend(calc, atoms)
 
         assert backend.gades_bias is None
+
+
+class TestGADESCalculatorPartialBiasing:
+    """Tests for GADESCalculator with partial atom biasing (A10 regression tests)."""
+
+    def test_partial_biasing_force_shape(self):
+        """
+        GADESCalculator.calculate() should handle partial atom biasing correctly.
+
+        This is a regression test for A10: when N_bias < N_atoms, the bias
+        should be applied only to biased atoms without shape mismatch errors.
+        """
+        n_atoms = 10
+        bias_indices = [0, 1, 2]  # Only 3 atoms biased out of 10
+
+        atoms = MockAtoms(n_atoms=n_atoms)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+
+        # Use a simple Hessian function that returns identity
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        # Create real GADESCalculator via ASEBackend.with_gades
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+        )
+
+        # Attach integrator and set step to trigger bias application
+        integrator = MockIntegrator(nsteps=100)  # Step 100 = multiple of interval
+        backend.integrator = integrator
+
+        # Verify applying_bias returns True
+        assert backend.gades_bias.applying_bias() is True
+
+        # Call calculate - this would raise ValueError before A10 fix
+        gades_calc = atoms.calc
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        # Verify output forces have correct shape (N_atoms, 3)
+        result_forces = gades_calc.results['forces']
+        assert result_forces.shape == (n_atoms, 3), \
+            f"Expected shape ({n_atoms}, 3), got {result_forces.shape}"
+
+    def test_partial_biasing_only_affects_biased_atoms(self):
+        """
+        Bias should only be applied to atoms in bias_atom_indices.
+
+        Non-biased atoms should retain their original forces from base calculator.
+        """
+        n_atoms = 10
+        bias_indices = [0, 1, 2]  # Only first 3 atoms biased
+        non_bias_indices = [3, 4, 5, 6, 7, 8, 9]
+
+        atoms = MockAtoms(n_atoms=n_atoms)
+
+        # Create base calculator with known forces
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        original_forces = np.ones((n_atoms, 3)) * 5.0  # All forces = 5.0
+        base_calc.results['forces'] = original_forces.copy()
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+        )
+
+        # Trigger bias application
+        integrator = MockIntegrator(nsteps=100)
+        backend.integrator = integrator
+
+        gades_calc = atoms.calc
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        result_forces = gades_calc.results['forces']
+
+        # Non-biased atoms should have unchanged forces
+        np.testing.assert_array_equal(
+            result_forces[non_bias_indices, :],
+            original_forces[non_bias_indices, :],
+            err_msg="Non-biased atoms should have unchanged forces"
+        )
+
+    def test_no_bias_when_not_applying(self):
+        """
+        When applying_bias() returns False, forces should be unchanged.
+        """
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        original_forces = np.ones((n_atoms, 3)) * 7.0
+        base_calc.results['forces'] = original_forces.copy()
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+        )
+
+        # Step 50 is NOT a multiple of interval=100, so no bias
+        integrator = MockIntegrator(nsteps=50)
+        backend.integrator = integrator
+
+        assert backend.gades_bias.applying_bias() is False
+
+        gades_calc = atoms.calc
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        result_forces = gades_calc.results['forces']
+
+        # All forces should be unchanged
+        np.testing.assert_array_equal(
+            result_forces,
+            original_forces,
+            err_msg="Forces should be unchanged when not applying bias"
+        )

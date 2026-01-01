@@ -33,6 +33,15 @@ class Backend:
     def get_atom_symbols(self, bias_atom_indices: Sequence[int]) -> List[str]:
         return []
 
+    def get_positions(self) -> np.ndarray:
+        """
+        Retrieve the current atom positions.
+
+        Returns:
+            np.ndarray: Positions array with shape ``(N, 3)``.
+        """
+        raise NotImplementedError
+
     def get_current_state(self) -> Tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError
 
@@ -113,6 +122,12 @@ class OpenMMBackend(Backend):
             for i in bias_atom_indices
         ]
         return atom_symbols
+
+    def get_positions(self) -> np.ndarray:
+        """Retrieve the current atom positions from the OpenMM context."""
+        state = self.simulation.context.getState(getPositions=True)
+        positions = state.getPositions(asNumpy=True)
+        return positions.value_in_unit(openmm.unit.nanometer)
 
     def get_current_state(self) -> Tuple[np.ndarray, np.ndarray]:
         state = self.simulation.context.getState(getPositions=True, getForces=True)
@@ -224,7 +239,10 @@ class GADESCalculator(Calculator):
         if self.force_updater is not None and 'forces' in self.results:
             if self.force_updater.applying_bias():
                 bias = self.force_updater.get_gad_force()
-                self.results['forces'] = self.results['forces'] + bias
+                # Create full-size bias array for partial atom biasing
+                full_bias = np.zeros_like(self.results['forces'])
+                full_bias[self.force_updater.bias_atom_indices, :] = bias
+                self.results['forces'] = self.results['forces'] + full_bias
 
 class ASEBackend(Backend):
     """
@@ -299,16 +317,19 @@ class ASEBackend(Backend):
             self.current_step = -1
         return self.current_step
 
+    def get_positions(self) -> np.ndarray:
+        """Retrieve the current atom positions."""
+        return self.atoms.get_positions()
+
     def get_current_state(self) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Retrieve the current atom positions and forces from the base calculator.
+        Retrieve the current atom positions and total forces (including bias).
 
         Returns:
             Tuple of (positions, forces) arrays, both with shape ``(N, 3)``.
         """
         positions = self.atoms.get_positions()
-        self.base_calc.calculate(atoms=self.atoms, properties=['forces'], system_changes=all_changes)
-        forces = self.base_calc.results['forces']
+        forces = self.atoms.get_forces()  # Total forces via GADESCalculator
         return positions, forces
 
     def get_forces(self, positions: np.ndarray) -> np.ndarray:

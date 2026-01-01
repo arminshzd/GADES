@@ -13,7 +13,7 @@ This document describes the test suite for GADES (Gentlest Ascent Dynamics for E
 | `test_gades.py` | Core GADESBias + GADESForceUpdater | 61 tests |
 | `test_validation.py` | Input Validation | 35 tests |
 | `test_utils.py` | Utility Functions | 14 tests |
-| `test_backend.py` | ASE Backend | 24 tests |
+| `test_backend.py` | ASE Backend | 27 tests |
 
 ---
 
@@ -601,6 +601,18 @@ Tests the ASE (Atomic Simulation Environment) integration.
 | `test_with_gades_gades_bias_none_for_regular_init` | Regular init leaves gades_bias=None | Factory vs manual |
 
 **Why the factory matters**: Simplifies setup by handling the complex wiring between components.
+
+### TestGADESCalculatorPartialBiasing
+
+**What it tests**: GADESCalculator behavior when biasing a subset of atoms (N_bias < N_atoms).
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_partial_biasing_force_shape` | Output forces have shape (N_atoms, 3) | Correct shape even with partial biasing |
+| `test_partial_biasing_only_affects_biased_atoms` | Non-biased atoms retain original forces | Bias only applied to selected atoms |
+| `test_no_bias_when_not_applying` | Forces unchanged when applying_bias()=False | No bias modification |
+
+**Why it matters**: Before the fix, biasing a subset of atoms would cause a shape mismatch error (N_bias, 3) vs (N_atoms, 3) when adding bias to forces. These tests ensure partial atom biasing works correctly for ASE backend.
 
 ---
 

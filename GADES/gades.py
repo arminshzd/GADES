@@ -561,8 +561,10 @@ class GADESBias:
               eigenvectors, eigenvalues, and atom coordinates are written to
               `<prefix>_evec.log`, `<prefix>_eval.log`, and `<prefix>_biased_atoms.xyz`.
         """
-        positions, forces = self.backend.get_current_state()
-        forces_u = forces[self.bias_atom_indices, :]
+        positions = self.backend.get_positions()
+        # Use unbiased forces for bias calculation (true PES curvature)
+        forces_unbiased = self.backend.get_forces(positions).reshape(-1, 3)
+        forces_u = forces_unbiased[self.bias_atom_indices, :]
         step = self.backend.get_currentStep()
 
         if self.eigensolver == 'lanczos_hvp':
@@ -571,7 +573,7 @@ class GADESBias:
             hess = None  # No Hessian computed
         else:
             # Matrix-based path: compute or approximate Hessian
-            hess = self._get_hessian(positions, forces, step)
+            hess = self._get_hessian(positions, forces_unbiased, step)
             eigval, n = self._compute_softest_mode(hess)
 
         # Compute GAD bias force
