@@ -391,12 +391,11 @@ class TestGADESBofillSignConvention:
     should produce a Hessian whose softest mode matches the explicit Hessian.
 
     GADES sign convention:
-    - backend.get_forces() returns -F = ∇V (gradient, not force)
+    - backend.get_forces() returns F = -∇V (physical forces)
     - _get_hessian() calls Bofill with grad_new=-bias_forces, grad_old=-self._last_forces
-    - This means we pass -∇V = F (forces) to Bofill, not gradients
+    - This negation converts forces to gradients: -F = ∇V
 
-    The Bofill algorithm expects gradients (∇V), so if we pass forces (F = -∇V),
-    the resulting Hessian would have the wrong sign.
+    The Bofill algorithm expects gradients (∇V), so we pass -F.
     """
 
     def test_bofill_with_gades_convention_near_saddle(self):
@@ -422,55 +421,38 @@ class TestGADESBofillSignConvention:
         softest_mode_exact = eigvecs_exact[:, 0]
 
         # Simulate GADES convention:
-        # backend.get_forces() returns ∇V (gradient), not F (force)
-        # muller_brown_force returns F = -∇V, so we negate to get ∇V
-        grad_old = -muller_brown_force(pos_old)  # This is ∇V (gradient)
-        grad_new = -muller_brown_force(pos_new)  # This is ∇V (gradient)
+        # backend.get_forces() returns F = -∇V (physical forces)
+        # muller_brown_force returns F = -∇V
+        force_old = muller_brown_force(pos_old)  # This is F = -∇V
+        force_new = muller_brown_force(pos_new)  # This is F = -∇V
 
         # GADES _get_hessian() does: grad_new=-bias_forces, grad_old=-self._last_forces
-        # where bias_forces comes from get_forces() which returns ∇V
-        # So GADES passes: -∇V = F (forces, not gradients!)
-        gades_grad_new = -grad_new  # This is -∇V = F (WRONG for Bofill!)
-        gades_grad_old = -grad_old  # This is -∇V = F (WRONG for Bofill!)
+        # where bias_forces comes from get_forces() which returns F
+        # So GADES passes: -F = ∇V (gradients, correct for Bofill!)
+        gades_grad_new = -force_new  # This is -F = ∇V (correct for Bofill)
+        gades_grad_old = -force_old  # This is -F = ∇V (correct for Bofill)
 
         # Start Bofill with explicit Hessian (best case for convergence)
         H_init = muller_brown_hess(pos_old)
 
-        # Bofill with GADES convention (potentially wrong sign)
+        # Bofill with GADES convention (should be correct now)
         H_gades = get_bofill_H(pos_new, pos_old, gades_grad_new, gades_grad_old, H_init)
 
-        # Bofill with correct convention (gradients)
-        H_correct = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_init)
-
-        # Get softest modes from each
+        # Get softest mode from GADES convention
         eigvals_gades, eigvecs_gades = np.linalg.eigh(H_gades)
-        eigvals_correct, eigvecs_correct = np.linalg.eigh(H_correct)
-
         softest_mode_gades = eigvecs_gades[:, 0]
-        softest_mode_correct = eigvecs_correct[:, 0]
 
         # Check if GADES convention gives same softest mode direction as explicit
         # (allowing for sign flip since eigenvectors can point either way)
         alignment_gades = abs(np.dot(softest_mode_gades, softest_mode_exact))
-        alignment_correct = abs(np.dot(softest_mode_correct, softest_mode_exact))
 
-        # The "correct" convention should align well with explicit Hessian
-        assert alignment_correct > 0.9, (
-            f"Correct convention should align with exact: {alignment_correct:.3f}"
+        # The GADES convention should align well with explicit Hessian
+        assert alignment_gades > 0.9, (
+            f"GADES Bofill sign convention produces wrong softest mode!\n"
+            f"  Alignment with exact: {alignment_gades:.3f}\n"
+            f"  GADES softest eigenvalue: {eigvals_gades[0]:.3f}\n"
+            f"  Exact softest eigenvalue: {eigvals_exact[0]:.3f}"
         )
-
-        # Report what we find about GADES convention
-        # If this fails, the GADES sign convention is wrong
-        if alignment_gades < 0.5:
-            pytest.fail(
-                f"GADES Bofill sign convention produces wrong softest mode!\n"
-                f"  Alignment with exact (GADES convention): {alignment_gades:.3f}\n"
-                f"  Alignment with exact (correct convention): {alignment_correct:.3f}\n"
-                f"  GADES softest eigenvalue: {eigvals_gades[0]:.3f}\n"
-                f"  Correct softest eigenvalue: {eigvals_correct[0]:.3f}\n"
-                f"  Exact softest eigenvalue: {eigvals_exact[0]:.3f}\n"
-                f"Fix: In _get_hessian(), change grad_new=-bias_forces to grad_new=bias_forces"
-            )
 
     def test_bofill_sign_affects_eigenvalue_sign(self):
         """
@@ -515,9 +497,9 @@ class TestGADESBofillSignConvention:
         This simulates what happens in a real GADES run where Bofill is
         applied iteratively between full Hessian recomputations.
 
-        GADES convention (after fix):
-        - backend.get_forces() returns ∇V (gradient)
-        - _get_hessian() passes bias_forces directly to Bofill (correct)
+        GADES convention:
+        - backend.get_forces() returns F = -∇V (physical forces)
+        - _get_hessian() negates forces before passing to Bofill: -F = ∇V
         """
         from GADES.potentials import muller_brown_force, muller_brown_hess
 
@@ -534,11 +516,14 @@ class TestGADESBofillSignConvention:
             step = np.random.randn(2) * 0.01
             pos = pos_old + step
 
-            # Simulate what backend.get_forces() returns: ∇V (gradient)
-            grad_old = -muller_brown_force(pos_old)  # ∇V
-            grad_new = -muller_brown_force(pos)       # ∇V
+            # backend.get_forces() returns F = -∇V (forces)
+            force_old = muller_brown_force(pos_old)  # F = -∇V
+            force_new = muller_brown_force(pos)       # F = -∇V
 
-            # GADES now passes gradients directly (after the fix)
+            # GADES negates forces to get gradients: -F = ∇V
+            grad_old = -force_old  # ∇V
+            grad_new = -force_new  # ∇V
+
             H_bofill = get_bofill_H(pos, pos_old, grad_new, grad_old, H_bofill)
 
         # Compare final Hessian to exact

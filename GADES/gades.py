@@ -520,13 +520,13 @@ class GADESBias:
         else:
             # Use Bofill approximation
             from .bofill import get_bofill_H
-            # bias_forces comes from get_forces() which returns ∇V (gradient of potential)
-            # Bofill expects gradients, so we pass bias_forces directly
+            # bias_forces comes from get_forces() which returns F = -∇V (forces)
+            # Bofill expects gradients (∇V), so we negate: -F = ∇V
             hess = get_bofill_H(
                 pos_new=bias_positions,
                 pos_old=self._last_positions,
-                grad_new=bias_forces,
-                grad_old=self._last_forces,
+                grad_new=-bias_forces,
+                grad_old=-self._last_forces,
                 H=self._last_hess
             )
             # Update stored state for next Bofill iteration

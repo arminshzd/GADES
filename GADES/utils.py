@@ -229,7 +229,8 @@ def compute_hessian_force_fd_block_parallel(
     # Symmetrize block
     hessian_block = 0.5 * (hessian_block + hessian_block.T)
 
-    return hessian_block
+    # Negate: finite difference on forces gives -H, we need H = ∇²V
+    return -hessian_block
 
 
 def compute_hessian_force_fd_block_serial(
@@ -315,7 +316,8 @@ def compute_hessian_force_fd_block_serial(
     # Symmetrize
     hessian_block = 0.5 * (hessian_block + hessian_block.T)
 
-    return hessian_block
+    # Negate: finite difference on forces gives -H, we need H = ∇²V
+    return -hessian_block
 
 
 def compute_hessian_force_fd_richardson(
@@ -429,7 +431,8 @@ def compute_hessian_force_fd_richardson(
     # Symmetrize
     hessian_block = 0.5 * (hessian_block + hessian_block.T)
 
-    return hessian_block
+    # Negate: finite difference on forces gives -H, we need H = ∇²V
+    return -hessian_block
 
 
 def clamp_force_magnitudes(forces_flat: np.ndarray, max_force: float) -> np.ndarray:

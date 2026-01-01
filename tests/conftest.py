@@ -39,8 +39,8 @@ class MockBackend:
         return self._positions.copy(), self._forces.copy()
 
     def get_forces(self, positions):
-        # Return negative flattened forces (matching real backend behavior)
-        return -self._forces.flatten()
+        # Return forces (F = -∇V) as flattened array
+        return self._forces.flatten()
 
     def apply_bias(self, bias_force_object, biased_force_values, bias_atom_indices):
         # Store for verification in tests

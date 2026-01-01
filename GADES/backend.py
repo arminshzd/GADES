@@ -321,9 +321,7 @@ class OpenMMBackend(Backend):
         # Restore original positions
         self.simulation.context.setPositions(original_positions * openmm.unit.nanometer)
 
-        # negating the forces does not affect the difference between f and f0 calculation in GADES get_gad_force()
-        # the hessian calculators use dU/dx = - force for calculations
-        return -forces.flatten()
+        return forces.flatten()
 
     def apply_bias(
         self,
@@ -369,13 +367,11 @@ def createGADESBiasForce(n_particles: int) -> "openmm.CustomExternalForce":  # t
     Create a custom OpenMM force object used for GADES biasing.
 
     This function constructs an OpenMM `CustomExternalForce` that applies
-    per-particle forces in the form:
+    per-particle bias forces. The per-particle parameters ``(fx, fy, fz)``
+    directly represent the force applied to each particle.
 
-    $$F(x, y, z) = f_x * x + f_y * y + f_z * z$$
-
-    where `fx`, `fy`, and `fz` are per-particle parameters that can be updated
-    during a simulation. The force is assigned to group `1` so that it can be
-    easily separated from other forces in analysis or reporting.
+    The force is assigned to group `1` so that it can be easily separated
+    from other forces in analysis or reporting.
 
     Args:
         n_particles (int):
@@ -408,7 +404,9 @@ def createGADESBiasForce(n_particles: int) -> "openmm.CustomExternalForce":  # t
 
     from openmm import CustomExternalForce
 
-    force = CustomExternalForce("fx*x+fy*y+fz*z")
+    # Energy expression is negated so that parameters (fx, fy, fz) represent
+    # the actual force applied: F = -∇E = (fx, fy, fz)
+    force = CustomExternalForce("-fx*x-fy*y-fz*z")
     force.addPerParticleParameter("fx")
     force.addPerParticleParameter("fy")
     force.addPerParticleParameter("fz")
@@ -455,7 +453,7 @@ def _get_openMM_forces(
     forces = state.getForces(asNumpy=True).value_in_unit(
         openmm.unit.kilojoule_per_mole / openmm.unit.nanometer
     )
-    return -forces.flatten()
+    return forces.flatten()
 
 
 try:
@@ -638,8 +636,7 @@ class ASEBackend(Backend):
         # Restore original positions
         self.atoms.set_positions(original_positions)
 
-        # negating the forces does not affect the difference between f and f0 calculation in GADES get_gad_force()
-        return -forces.flatten()
+        return forces.flatten()
 
     def _get_target_temperature(self) -> Optional[float]:
         """
