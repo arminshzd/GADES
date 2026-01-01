@@ -131,6 +131,10 @@ class OpenMMBackend(Backend):
 
     Args:
         simulation: The OpenMM Simulation object.
+        target_temperature: Target temperature in Kelvin for stability checking.
+            If not provided, the backend will attempt to read it from the integrator
+            (works for LangevinIntegrator, LangevinMiddleIntegrator, etc.).
+            If neither is available, stability checking will be skipped with a warning.
 
     Raises:
         ImportError: If OpenMM is not installed.
@@ -138,8 +142,14 @@ class OpenMMBackend(Backend):
 
     simulation: "openmm.app.Simulation"  # type: ignore[name-defined]
     system: "openmm.System"  # type: ignore[name-defined]
+    target_temperature: Optional[float]
+    _stability_warning_issued: bool
 
-    def __init__(self, simulation: "openmm.app.Simulation") -> None:  # type: ignore[name-defined]
+    def __init__(
+        self,
+        simulation: "openmm.app.Simulation",  # type: ignore[name-defined]
+        target_temperature: Optional[float] = None,
+    ) -> None:
         if not _OPENMM_AVAILABLE:
             raise ImportError(
                 "OpenMM is required for OpenMMBackend. "
@@ -148,22 +158,71 @@ class OpenMMBackend(Backend):
         self.simulation = simulation
         self.system = self.simulation.system
         self.name = "openmm"
+        self.target_temperature = target_temperature
+        self._stability_warning_issued = False
+
+    def _get_target_temperature(self) -> Optional[float]:
+        """
+        Get the target temperature for stability checking.
+
+        Returns the target temperature in Kelvin, trying in order:
+
+        1. ``self.target_temperature`` if set explicitly
+        2. Integrator's ``getTemperature()`` method (for NVT integrators)
+        3. ``None`` if neither is available
+
+        Returns:
+            Target temperature in Kelvin, or ``None`` if unavailable.
+        """
+        # First check if explicitly set
+        if self.target_temperature is not None:
+            return self.target_temperature
+
+        # Try to get from integrator
+        integrator = self.simulation.integrator
+        if hasattr(integrator, 'getTemperature'):
+            try:
+                return integrator.getTemperature().value_in_unit(_unit.kelvin)
+            except Exception:
+                pass
+
+        return None
 
     def is_stable(self) -> bool:
         """
+        Check if the simulation is stable by comparing instantaneous temperature
+        to the target temperature.
+
         This method estimates the instantaneous temperature from the system's
-        kinetic energy and compares it to the target temperature of the integrator.
-        If the deviation exceeds the stability threshold (configurable via
+        kinetic energy and compares it to the target temperature. If the deviation
+        exceeds the stability threshold (configurable via
         ``defaults["stability_threshold_temp_diff"]``), the system is considered unstable.
 
-        Check if the simulation is stable by evaluating the instantaneous temperature
-          return True if stable, False otherwise
+        If no target temperature is available (not set explicitly and cannot be read
+        from the integrator), a warning is issued once and the method returns True
+        (stability check skipped).
 
-        For a small number of biased DOFs, this criterion might give false positives.
+        Returns:
+            bool: True if stable or if stability check is skipped, False if unstable.
+
+        Note:
+            For a small number of biased DOFs, this criterion might give false positives.
         """
-        dof = 0
-        state = self.simulation.context.getState(getEnergy=True)
+        target_temp = self._get_target_temperature()
 
+        if target_temp is None:
+            if not self._stability_warning_issued:
+                warnings.warn(
+                    "OpenMMBackend: Cannot perform stability check - no target temperature available. "
+                    "Either set target_temperature in OpenMMBackend constructor or use an NVT integrator "
+                    "(e.g., LangevinIntegrator). Stability checking will be skipped.",
+                    UserWarning
+                )
+                self._stability_warning_issued = True
+            return True
+
+        # Calculate degrees of freedom
+        dof = 0
         for i in range(self.system.getNumParticles()):
             if self.system.getParticleMass(i) > 0*_unit.dalton:
                 dof += 3
@@ -173,11 +232,13 @@ class OpenMMBackend(Backend):
                 dof -= 1
         if any(type(self.system.getForce(i)) == _CMMotionRemover for i in range(self.system.getNumForces())):
             dof -= 3
-        temperature = (2*state.getKineticEnergy()/(dof*_unit.MOLAR_GAS_CONSTANT_R)).value_in_unit(_unit.kelvin)
-        target_temperature = self.simulation.integrator.getTemperature().value_in_unit(_unit.kelvin)
+
+        # Calculate instantaneous temperature
+        state = self.simulation.context.getState(getEnergy=True)
+        current_temp = (2*state.getKineticEnergy()/(dof*_unit.MOLAR_GAS_CONSTANT_R)).value_in_unit(_unit.kelvin)
 
         threshold = defaults["stability_threshold_temp_diff"]
-        if abs(temperature - target_temperature) > threshold:
+        if abs(current_temp - target_temp) > threshold:
             return False
         return True
 
