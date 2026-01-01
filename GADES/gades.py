@@ -61,10 +61,8 @@ class GADESBias:
                 A user-supplied function returning the Hessian matrix for the system.
                 Must accept `(backend, atom_indices, step_size, platform)` as input
                 and return a 2D array-like Hessian. Choose one of
-                `GADES.utils.compute_hessian_force_fd_richardson`,
-                `GADES.utils.compute_hessian_force_fd_block_serial`, or
-                `GADES.utils.compute_hessian_force_fd_block_parallel`. We suggest
-                the Richardson variant.
+                `GADES.utils.compute_hessian_force_fd_richardson` (recommended) or
+                `GADES.utils.compute_hessian_force_fd_block_serial`.
             clamp_magnitude (float):
                 Maximum allowed magnitude for each component of the bias force,
                 used to prevent unphysical updates or exploration of irrelavant
@@ -762,10 +760,8 @@ class GADESForceUpdater(GADESBias):
                 A user-supplied function returning the Hessian matrix for the system.
                 Must accept `(backend, atom_indices, step_size, platform)` as input
                 and return a 2D array-like Hessian. Choose one of
-                `GADES.utils.compute_hessian_force_fd_richardson`,
-                `GADES.utils.compute_hessian_force_fd_block_serial`, or
-                `GADES.utils.compute_hessian_force_fd_block_parallel`. We suggest
-                the Richardson variant.
+                `GADES.utils.compute_hessian_force_fd_richardson` (recommended) or
+                `GADES.utils.compute_hessian_force_fd_block_serial`.
             clamp_magnitude (float):
                 Maximum allowed magnitude for each component of the bias force,
                 used to prevent unphysical updates or exploration of irrelevant

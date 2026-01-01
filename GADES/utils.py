@@ -17,7 +17,6 @@ numerical accuracy. Example::
 
 Alternative functions are provided for specific scenarios:
 - ``compute_hessian_force_fd_block_serial``: Simpler, no extrapolation
-- ``compute_hessian_force_fd_block_parallel``: Parallel version (slower for <10k atoms)
 """
 
 from typing import Callable, Optional, Sequence, Tuple, TYPE_CHECKING
@@ -25,9 +24,10 @@ from typing import Callable, Optional, Sequence, Tuple, TYPE_CHECKING
 __all__ = [
     "compute_hessian_force_fd_richardson",  # Recommended
     "compute_hessian_force_fd_block_serial",
-    "compute_hessian_force_fd_block_parallel",
     "clamp_force_magnitudes",
 ]
+
+import warnings
 
 import numpy as np
 from scipy.optimize import approx_fprime
@@ -137,6 +137,15 @@ def compute_hessian_force_fd_block_parallel(
     """
     Compute the Hessian block for a subset of atoms via finite-difference forces.
 
+    .. deprecated::
+        This function is deprecated due to thread-safety issues. The threading
+        backend cannot safely parallelize calls to ``backend.get_forces()``
+        because OpenMM/ASE backends mutate shared state (positions) without
+        synchronization. This can produce corrupted Hessians.
+
+        Use ``compute_hessian_force_fd_richardson`` (recommended) or
+        ``compute_hessian_force_fd_block_serial`` instead.
+
     This function builds the Hessian matrix (second derivatives of the potential
     energy with respect to Cartesian coordinates) for a selected set of atoms.
     The calculation perturbs each coordinate by a small displacement and computes
@@ -187,6 +196,14 @@ def compute_hessian_force_fd_block_parallel(
         >>> hess_block.shape
         (9, 9)
     """
+    warnings.warn(
+        "compute_hessian_force_fd_block_parallel is deprecated due to thread-safety "
+        "issues that can produce corrupted Hessians. Use "
+        "compute_hessian_force_fd_richardson (recommended) or "
+        "compute_hessian_force_fd_block_serial instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     positions_array = backend.get_positions()
     n_atoms = len(positions_array)
 
