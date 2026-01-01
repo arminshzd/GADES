@@ -93,7 +93,7 @@ class Backend:
             positions: Atom positions with shape ``(N, 3)``.
 
         Returns:
-            np.ndarray: Forces array with shape ``(N, 3)``.
+            np.ndarray: Flattened forces array with shape ``(3*N,)``.
         """
         raise NotImplementedError
 
@@ -610,18 +610,17 @@ class ASEBackend(Backend):
 
     def get_forces(self, positions: np.ndarray) -> np.ndarray:
         """
-        Compute the original (unbiased) forces from the base calculator of my calculator.
-        The calculate() funtion of my calculator with the biasing forces
-        will be used by the integrator to advance the atom positions.
+        Compute the original (unbiased) forces from the base calculator.
 
         This function updates the base calculator with the provided positions,
-        then retrieves forces. The forces are returned as a 1D array.
-
-        This function is called by GADES get_gad_force() for the perturbed positions.
+        then retrieves forces. The forces are flattened into a 1D array.
 
         Args:
             positions (np.ndarray):
-                Atomic positions, shaped `(N, 3)`.
+                Atomic positions, shaped ``(N, 3)``.
+
+        Returns:
+            np.ndarray: Flattened force vector of shape ``(3*N,)``.
 
         Notes:
             Original positions are restored after force computation.
