@@ -4,9 +4,30 @@ Core utility functions for GADES.
 This module provides essential utilities for GADES computations:
 - Hessian matrix computation via finite differences
 - Force magnitude clamping
+
+Recommended Hessian Function
+----------------------------
+For most use cases, use ``compute_hessian_force_fd_richardson``. It applies
+Richardson extrapolation to reduce sensitivity to step size and improve
+numerical accuracy. Example::
+
+    from GADES.utils import compute_hessian_force_fd_richardson as hessian
+
+    hess = hessian(backend, atom_indices=[0, 1, 2])
+
+Alternative functions are provided for specific scenarios:
+- ``compute_hessian_force_fd_block_serial``: Simpler, no extrapolation
+- ``compute_hessian_force_fd_block_parallel``: Parallel version (slower for <10k atoms)
 """
 
 from typing import Callable, Optional, Sequence, Tuple, TYPE_CHECKING
+
+__all__ = [
+    "compute_hessian_force_fd_richardson",  # Recommended
+    "compute_hessian_force_fd_block_serial",
+    "compute_hessian_force_fd_block_parallel",
+    "clamp_force_magnitudes",
+]
 
 import numpy as np
 from scipy.optimize import approx_fprime
