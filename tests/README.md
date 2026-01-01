@@ -9,11 +9,11 @@ This document describes the test suite for GADES (Gentlest Ascent Dynamics for E
 | `conftest.py` | Test fixtures | Mock objects and shared fixtures |
 | `test_hvp.py` | Hessian-Vector Products | 16 tests |
 | `test_lanczos.py` | Lanczos Eigensolvers | 28 tests |
-| `test_bofill.py` | Hessian Update Algorithms | 17 tests |
+| `test_bofill.py` | Hessian Update Algorithms | 21 tests |
 | `test_gades.py` | Core GADESBias + GADESForceUpdater | 61 tests |
 | `test_validation.py` | Input Validation | 35 tests |
 | `test_utils.py` | Utility Functions | 14 tests |
-| `test_backend.py` | ASE Backend | 27 tests |
+| `test_backend.py` | ASE Backend + OpenMM Backend | 46 tests |
 
 ---
 
@@ -263,6 +263,19 @@ Tests Bofill, SR1, and BFGS quasi-Newton Hessian update formulas.
 | `test_zero_step` | Zero step returns original H | No change |
 | `test_large_step` | Large steps don't cause NaN/Inf | Finite output |
 | `test_flattened_vs_shaped_input` | (3N,) and (N,3) inputs work | Same result |
+
+### TestGADESBofillSignConvention
+
+**What it tests**: GADES's Bofill integration uses the correct sign convention (gradients, not forces).
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_bofill_with_gades_convention_near_saddle` | Softest mode aligns with explicit Hessian | Alignment > 0.5 |
+| `test_bofill_sign_affects_eigenvalue_sign` | Forces vs gradients give different eigenvalues | Significant difference |
+| `test_iterated_bofill_convergence` | Correct convention converges to exact Hessian | Error < 200 |
+| `test_wrong_sign_convention_fails` | Wrong sign (forces) produces 5x+ higher error | Regression test |
+
+**Why it matters**: Passing forces instead of gradients to Bofill would flip eigenvalue signs, causing GADES to bias in the wrong direction. These tests ensure the correct sign convention is used.
 
 ---
 
@@ -535,9 +548,9 @@ Tests utility functions used throughout GADES.
 
 ---
 
-## test_backend.py - ASE Backend Tests
+## test_backend.py - Backend Tests
 
-Tests the ASE (Atomic Simulation Environment) integration.
+Tests the ASE and OpenMM backend integrations.
 
 ### TestBackendInterface
 
@@ -613,6 +626,73 @@ Tests the ASE (Atomic Simulation Environment) integration.
 | `test_no_bias_when_not_applying` | Forces unchanged when applying_bias()=False | No bias modification |
 
 **Why it matters**: Before the fix, biasing a subset of atoms would cause a shape mismatch error (N_bias, 3) vs (N_atoms, 3) when adding bias to forces. These tests ensure partial atom biasing works correctly for ASE backend.
+
+### TestOpenMMBackendInitialization
+
+**What it tests**: OpenMMBackend constructor.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_basic_initialization` | Stores simulation, system, name | Correct attributes |
+| `test_initialization_with_target_temperature` | Explicit temperature stored | Value preserved |
+
+### TestOpenMMBackendGetTargetTemperature
+
+**What it tests**: Target temperature detection from integrator or explicit setting.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_explicit_target_temperature` | Explicit overrides all | Returns explicit |
+| `test_langevin_integrator_temperature` | Reads from LangevinIntegrator | Correct value |
+| `test_explicit_overrides_integrator` | Explicit beats integrator | Explicit wins |
+| `test_no_target_available` | Returns None when unavailable | Handles missing |
+
+### TestOpenMMBackendIsStable
+
+**What it tests**: Temperature stability checks and DOF guard.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_no_target_returns_true_with_warning` | Missing target warns but returns True | Warning issued |
+| `test_warning_only_issued_once` | Warning not repeated | Single warning |
+| `test_zero_dof_returns_true_with_warning` | DOF ≤ 0 warns and returns True | Prevents crash |
+| `test_zero_dof_warning_only_issued_once` | DOF warning not repeated | Single warning |
+
+**Why DOF guard matters**: Systems with all virtual sites or misconfigured particles could have DOF ≤ 0, causing division by zero in temperature calculation.
+
+### TestOpenMMBackendGetCurrentStep
+
+**What it tests**: Step counter retrieval.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_returns_simulation_current_step` | Returns simulation.currentStep | Correct value |
+| `test_returns_zero_initially` | New simulation starts at 0 | Zero step |
+
+### TestOpenMMBackendGetAtomSymbols
+
+**What it tests**: Atom symbol retrieval from topology.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_get_atom_symbols` | Returns symbols for given indices | Correct subset |
+| `test_get_all_atom_symbols` | Returns all symbols | Complete list |
+
+### TestOpenMMBackendGetPositions
+
+**What it tests**: Position retrieval from context.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_get_positions_returns_array` | Returns numpy array with correct shape | (N, 3) array |
+
+### TestOpenMMBackendGetAtoms
+
+**What it tests**: Atom iterator from topology.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_get_atoms_returns_iterator` | Returns iterable of atoms | Correct count |
 
 ---
 

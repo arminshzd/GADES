@@ -206,7 +206,11 @@ class OpenMMBackend(Backend):
             bool: True if stable or if stability check is skipped, False if unstable.
 
         Note:
-            For a small number of biased DOFs, this criterion might give false positives.
+            - For a small number of biased DOFs, this criterion might give false positives.
+            - The DOF calculation accounts for particles with mass, constraints, and
+              CMMotionRemover. It may be inaccurate for systems with virtual sites,
+              rigid bodies, barostats, or other motion removers. For such systems,
+              set ``target_temperature`` explicitly in the constructor.
         """
         target_temp = self._get_target_temperature()
 
@@ -232,6 +236,18 @@ class OpenMMBackend(Backend):
                 dof -= 1
         if any(type(self.system.getForce(i)) == _CMMotionRemover for i in range(self.system.getNumForces())):
             dof -= 3
+
+        # Guard against invalid DOF (e.g., all virtual sites, misconfigured system)
+        if dof <= 0:
+            if not self._stability_warning_issued:
+                warnings.warn(
+                    "OpenMMBackend: Cannot compute temperature - DOF <= 0. "
+                    "This may occur with virtual sites or misconfigured systems. "
+                    "Stability checking will be skipped.",
+                    UserWarning
+                )
+                self._stability_warning_issued = True
+            return True
 
         # Calculate instantaneous temperature
         state = self.simulation.context.getState(getEnergy=True)

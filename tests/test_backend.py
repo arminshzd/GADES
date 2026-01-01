@@ -839,6 +839,39 @@ class TestOpenMMBackendIsStable:
             stability_warnings = [x for x in w if "target temperature" in str(x.message).lower()]
             assert len(stability_warnings) == 1
 
+    def test_zero_dof_returns_true_with_warning(self):
+        """With zero DOF (e.g., all virtual sites), should warn and return True."""
+        # Create simulation with zero-mass particles (virtual sites)
+        simulation = MockOpenMMSimulation(integrator_temp=300.0)
+        simulation.system._masses = [0.0] * 10  # All zero mass = 0 DOF
+
+        backend = OpenMMBackend(simulation)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = backend.is_stable()
+
+            assert result is True
+            assert len(w) == 1
+            assert "dof" in str(w[0].message).lower()
+
+    def test_zero_dof_warning_only_issued_once(self):
+        """Zero DOF warning should only be issued once."""
+        simulation = MockOpenMMSimulation(integrator_temp=300.0)
+        simulation.system._masses = [0.0] * 10
+
+        backend = OpenMMBackend(simulation)
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            backend.is_stable()
+            backend.is_stable()
+            backend.is_stable()
+
+            dof_warnings = [x for x in w if "dof" in str(x.message).lower()]
+            assert len(dof_warnings) == 1
+
 
 @pytest.mark.skipif(not HAS_OPENMM, reason="OpenMM not installed")
 class TestOpenMMBackendGetCurrentStep:
