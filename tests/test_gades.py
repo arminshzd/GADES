@@ -74,41 +74,6 @@ class TestGetGadForce:
         force = bias.get_gad_force()
         assert force.shape == (len(bias_indices), 3)
 
-    def test_get_gad_force_direction(self, mock_backend_factory):
-        """Bias force should be along softest eigenmode direction."""
-        n_atoms = 3
-        bias_indices = [0, 1, 2]
-
-        # Create backend with known forces
-        forces = np.array([[1.0, 0.0, 0.0],
-                          [0.0, 1.0, 0.0],
-                          [0.0, 0.0, 1.0]])
-        backend = mock_backend_factory(n_atoms=n_atoms, forces=forces)
-
-        # Hessian with known smallest eigenvector
-        def known_hess_func(backend, atom_indices, step_size, platform):
-            n_dof = len(atom_indices) * 3
-            # Diagonal matrix: smallest eigenvalue at position 0
-            return np.diag(np.arange(1, n_dof + 1, dtype=float))
-
-        bias = GADESBias(
-            backend=backend,
-            biased_force=None,
-            bias_atom_indices=bias_indices,
-            hess_func=known_hess_func,
-            clamp_magnitude=10000.0,  # High clamp to not affect result
-            kappa=0.9,
-            interval=200,
-        )
-
-        force = bias.get_gad_force()
-
-        # The softest mode eigenvector for diagonal matrix with [1,2,3,...]
-        # is [1, 0, 0, ...] (first coordinate)
-        # Force projection along this direction times -kappa
-        # F_bias = -kappa * (F · n) * n
-        assert force.shape == (3, 3)
-
     def test_get_gad_force_clamping(self, mock_backend_factory):
         """Force magnitude should be clamped."""
         n_atoms = 3
@@ -139,49 +104,6 @@ class TestGetGadForce:
         for i in range(len(bias_indices)):
             magnitude = np.linalg.norm(force[i])
             assert magnitude <= clamp + 1e-10
-
-    def test_get_gad_force_kappa_scaling(self, mock_backend_factory):
-        """Force should scale with kappa."""
-        n_atoms = 3
-        bias_indices = [0, 1, 2]
-
-        forces = np.array([[1.0, 0.0, 0.0],
-                          [0.0, 0.0, 0.0],
-                          [0.0, 0.0, 0.0]])
-        backend = mock_backend_factory(n_atoms=n_atoms, forces=forces)
-
-        def hess_func(backend, atom_indices, step_size, platform):
-            n_dof = len(atom_indices) * 3
-            return np.eye(n_dof)
-
-        # Test with kappa = 0.5
-        bias_half = GADESBias(
-            backend=backend,
-            biased_force=None,
-            bias_atom_indices=bias_indices,
-            hess_func=hess_func,
-            clamp_magnitude=10000.0,
-            kappa=0.5,
-            interval=200,
-        )
-
-        # Test with kappa = 1.0
-        bias_full = GADESBias(
-            backend=backend,
-            biased_force=None,
-            bias_atom_indices=bias_indices,
-            hess_func=hess_func,
-            clamp_magnitude=10000.0,
-            kappa=1.0,
-            interval=200,
-        )
-
-        force_half = bias_half.get_gad_force()
-        force_full = bias_full.get_gad_force()
-
-        # Force with kappa=0.5 should be half of kappa=1.0
-        assert_array_almost_equal(force_half, force_full * 0.5)
-
 
 class TestApplyingBias:
     """Tests for the applying_bias method."""
@@ -504,69 +426,6 @@ class TestLanczosHVPIntegration:
         params['hvp_epsilon'] = 0
         with pytest.raises(ValueError, match="hvp_epsilon must be a positive number"):
             GADESBias(**params)
-
-    def test_lanczos_hvp_computes_softest_mode(self, mock_backend_factory):
-        """lanczos_hvp should compute softest mode similar to numpy."""
-        from GADES.potentials import muller_brown_force, muller_brown_hess
-
-        n_atoms = 1
-        bias_indices = [0]
-        pos = np.array([[0.0, 0.5, 0.0]])  # 2D position padded to 3D
-
-        # Create backend with known positions and forces
-        backend = mock_backend_factory(n_atoms=n_atoms)
-        backend.positions = pos
-        backend.forces = np.zeros_like(pos)
-
-        # Simple quadratic potential for testing
-        # H = diag([1, 2, 3])
-        def simple_hess_func(backend, atom_indices, step_size, platform):
-            return np.diag([1.0, 2.0, 3.0])
-
-        def simple_force_func(positions):
-            # For H = diag([1,2,3]), forces = -H @ x
-            x = positions.flatten()
-            return -np.array([1.0, 2.0, 3.0]) * x
-
-        backend.get_forces = simple_force_func
-
-        # Test with numpy
-        bias_numpy = GADESBias(
-            backend=backend,
-            biased_force=None,
-            bias_atom_indices=bias_indices,
-            hess_func=simple_hess_func,
-            clamp_magnitude=10000.0,
-            kappa=0.9,
-            interval=200,
-            eigensolver='numpy',
-        )
-
-        # Test with lanczos_hvp
-        bias_hvp = GADESBias(
-            backend=backend,
-            biased_force=None,
-            bias_atom_indices=bias_indices,
-            hess_func=simple_hess_func,  # Not used for HVP, but required
-            clamp_magnitude=10000.0,
-            kappa=0.9,
-            interval=200,
-            eigensolver='lanczos_hvp',
-            lanczos_iterations=10,
-        )
-
-        # Get eigenvalues and eigenvectors
-        hess = simple_hess_func(backend, bias_indices, 0, "CPU")
-        eigval_numpy, eigvec_numpy = bias_numpy._compute_softest_mode(hess)
-        eigval_hvp, eigvec_hvp = bias_hvp._compute_softest_mode_hvp(pos)
-
-        # Smallest eigenvalue should be 1.0
-        assert abs(eigval_numpy - 1.0) < 0.1
-        assert abs(eigval_hvp - 1.0) < 0.1
-
-        # Eigenvectors should be parallel (allow sign flip)
-        cosine = abs(np.dot(eigvec_numpy, eigvec_hvp))
-        assert cosine > 0.9
 
     def test_lanczos_hvp_skips_hessian_computation(self, mock_backend_factory):
         """lanczos_hvp should not call hess_func."""

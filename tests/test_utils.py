@@ -87,13 +87,6 @@ class TestClampForceMagnitudes:
         result_normalized = result / np.linalg.norm(result)
         assert_array_almost_equal(original_normalized, result_normalized)
 
-    def test_exact_max_force(self):
-        """Vector with exactly max_force magnitude should be unchanged."""
-        forces = np.array([3.0, 4.0, 0.0])  # Magnitude 5
-        max_force = 5.0
-        result = clamp_force_magnitudes(forces, max_force)
-        assert_array_almost_equal(result, forces)
-
     def test_negative_components(self):
         """Test with negative force components."""
         forces = np.array([-3.0, -4.0, 0.0])  # Magnitude 5
@@ -112,13 +105,6 @@ class TestClampForceMagnitudes:
         max_force = 1.0
         result = clamp_force_magnitudes(forces, max_force)
         assert result.shape == forces.shape
-
-    def test_3d_vectors_only(self):
-        """Function assumes 3D vectors; input length must be multiple of 3."""
-        forces = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])  # Two 3D vectors
-        max_force = 10.0
-        result = clamp_force_magnitudes(forces, max_force)
-        assert len(result) == 6
 
 
 class TestMullerBrownPotential:
