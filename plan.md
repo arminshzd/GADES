@@ -344,7 +344,10 @@ Added 13 new tests covering `GADESForceUpdater` reporter interface using `MockBa
   - ASE now matches OpenMM behavior: bias persists between updates
   - Added 5 tests in `TestGADESCalculatorPersistentBias`
   - Fixed integration tests for `_get_hessian()` signature
-- Total test count: 262 tests passing
+- ✅ Added bounds validation to `ASEBackend.with_gades()` (F3)
+  - Validates `bias_atom_indices` against `atoms` size before creating GADESBias
+  - Added 2 tests for bounds validation
+- Total test count: 264 tests passing
 
 ### 2025-12-31
 
@@ -1470,5 +1473,5 @@ When the same `biased_force_values` array is passed, OpenMM applies `-bias` whil
 
 - [x] F1: ASE bias persistence and stability handling (High) ✅ - Implemented persistent bias in GADESCalculator
 - [x] F2: ASE bias only applied on update steps, not persisted between updates unlike OpenMM (High) ✅ - Fixed by F1
-- [ ] F3: `ASEBackend.with_gades` bypasses bounds validation since GADESBias created with `backend=None` (Medium)
+- [x] F3: `ASEBackend.with_gades` bypasses bounds validation since GADESBias created with `backend=None` (Medium) ✅
 - [ ] F4: Warn when `use_bofill_update=True` with `eigensolver='lanczos_hvp'` since Bofill is silently ignored (Low)

@@ -7,13 +7,15 @@ This document describes the test suite for GADES (Gentlest Ascent Dynamics for E
 | Test File | Component | Tests |
 |-----------|-----------|-------|
 | `conftest.py` | Test fixtures | Mock objects and shared fixtures |
-| `test_hvp.py` | Hessian-Vector Products | 16 tests |
-| `test_lanczos.py` | Lanczos Eigensolvers | 28 tests |
-| `test_bofill.py` | Hessian Update Algorithms | 21 tests |
-| `test_gades.py` | Core GADESBias + GADESForceUpdater | 61 tests |
-| `test_validation.py` | Input Validation | 35 tests |
+| `test_hvp.py` | Hessian-Vector Products | 17 tests |
+| `test_lanczos.py` | Lanczos Eigensolvers | 30 tests |
+| `test_bofill.py` | Hessian Update Algorithms | 22 tests |
+| `test_gades.py` | Core GADESBias + GADESForceUpdater | 59 tests |
+| `test_integration.py` | Lanczos HVP + Bofill Integration | 8 tests |
+| `test_sign_convention.py` | Sign Convention Regression | 15 tests |
+| `test_validation.py` | Input Validation | 46 tests |
 | `test_utils.py` | Utility Functions | 14 tests |
-| `test_backend.py` | ASE Backend + OpenMM Backend | 46 tests |
+| `test_backend.py` | ASE Backend + OpenMM Backend | 58 tests |
 
 ---
 
@@ -333,7 +335,32 @@ Tests the main GADESBias class that computes and applies bias forces.
 | Test | What it validates | Expected outcome |
 |------|-------------------|------------------|
 | `test_register_next_step_basic` | Returns correct steps to next event | Correct count |
+| `test_register_next_step_at_bias_interval` | Bias interval and stability interval tie | Correct count |
 | `test_register_next_step_no_stability_interval` | Works without stability checks | Only bias interval |
+
+### TestRemoveBias
+
+**What it tests**: Bias removal delegation to backend.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_remove_bias_calls_backend` | `remove_bias()` calls backend remove | Backend called with indices |
+
+### TestApplyBias
+
+**What it tests**: Bias application delegation to backend.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_apply_bias_calls_backend` | `apply_bias()` calls backend apply | Backend receives bias |
+
+### TestIsStableDelegation
+
+**What it tests**: Stability checks delegate to backend.
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_is_stable_delegates_to_backend` | `_is_stable()` delegates | Backend method called |
 
 ### TestEigensolverIntegration
 
@@ -344,6 +371,8 @@ Tests the main GADESBias class that computes and applies bias forces.
 | `test_default_eigensolver_is_numpy` | Default = 'numpy' | Correct default |
 | `test_eigensolver_lanczos` | Accepts 'lanczos' | Valid option |
 | `test_invalid_eigensolver_raises` | Rejects invalid options | ValueError |
+| `test_lanczos_iterations_default` | Default iterations from config | Correct default |
+| `test_lanczos_iterations_custom` | Custom iterations accepted | Value stored |
 | `test_lanczos_gives_same_direction` | Lanczos and numpy give same direction | Forces aligned |
 
 **Why it matters**: All eigensolvers must produce consistent bias directions.
@@ -612,8 +641,10 @@ Tests the ASE and OpenMM backend integrations.
 | `test_with_gades_sets_atoms_calc` | atoms.calc is GADESCalculator | Calculator installed |
 | `test_with_gades_optional_parameters` | Optional params passed through | All options work |
 | `test_with_gades_gades_bias_none_for_regular_init` | Regular init leaves gades_bias=None | Factory vs manual |
+| `test_with_gades_invalid_index_raises` | Out-of-bounds bias_atom_indices rejected | ValueError with clear message |
+| `test_with_gades_valid_max_index_succeeds` | Valid max index (n_atoms - 1) accepted | No error |
 
-**Why the factory matters**: Simplifies setup by handling the complex wiring between components.
+**Why the factory matters**: Simplifies setup by handling the complex wiring between components. Also validates bias_atom_indices against system size before creating GADESBias (since GADESBias validation is skipped when backend=None).
 
 ### TestGADESCalculatorPartialBiasing
 
@@ -626,6 +657,20 @@ Tests the ASE and OpenMM backend integrations.
 | `test_no_bias_when_not_applying` | Forces unchanged when applying_bias()=False | No bias modification |
 
 **Why it matters**: Before the fix, biasing a subset of atoms would cause a shape mismatch error (N_bias, 3) vs (N_atoms, 3) when adding bias to forces. These tests ensure partial atom biasing works correctly for ASE backend.
+
+### TestGADESCalculatorPersistentBias
+
+**What it tests**: Persistent bias behavior in GADESCalculator (matching OpenMM behavior).
+
+| Test | What it validates | Expected outcome |
+|------|-------------------|------------------|
+| `test_bias_stored_after_applying` | Bias stored in `_stored_bias` after update interval | `_bias_active=True`, bias array stored |
+| `test_stored_bias_applied_at_non_update_steps` | Stored bias applied at steps between updates | Forces include stored bias |
+| `test_bias_persists_across_multiple_steps` | Same bias applied across consecutive steps | Consistent bias application |
+| `test_stability_failure_clears_bias` | Instability clears stored bias | `_bias_active=False`, `_stored_bias=None` |
+| `test_bias_restored_after_instability` | Next update interval restores bias | Bias recomputed and active |
+
+**Why it matters**: ASE now matches OpenMM behavior - bias persists continuously between update intervals rather than only being applied at update steps. When stability check fails, bias is cleared and not recomputed until the next update interval.
 
 ### TestOpenMMBackendInitialization
 

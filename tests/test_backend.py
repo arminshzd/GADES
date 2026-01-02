@@ -444,6 +444,52 @@ class TestASEBackendWithGades:
 
         assert backend.gades_bias is None
 
+    def test_with_gades_invalid_index_raises(self):
+        """with_gades should raise ValueError for out-of-bounds bias_atom_indices."""
+        atoms = MockAtoms(n_atoms=10)
+        base_calc = MockBaseCalculator(n_atoms=10)
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        with pytest.raises(ValueError) as exc_info:
+            ASEBackend.with_gades(
+                atoms=atoms,
+                base_calc=base_calc,
+                bias_atom_indices=[0, 1, 100],  # Index 100 is out of bounds
+                hess_func=mock_hess_func,
+                clamp_magnitude=1000,
+                kappa=0.9,
+                interval=100,
+            )
+
+        assert "100" in str(exc_info.value)
+        assert "10 atoms" in str(exc_info.value)
+
+    def test_with_gades_valid_max_index_succeeds(self):
+        """with_gades should accept index == n_atoms - 1 (last valid index)."""
+        atoms = MockAtoms(n_atoms=10)
+        base_calc = MockBaseCalculator(n_atoms=10)
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        # Index 9 is valid for 10 atoms (0-9)
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=[0, 5, 9],
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+        )
+
+        assert backend.gades_bias is not None
+        assert list(backend.gades_bias.bias_atom_indices) == [0, 5, 9]
+
 
 class TestGADESCalculatorPartialBiasing:
     """Tests for GADESCalculator with partial atom biasing (A10 regression tests)."""

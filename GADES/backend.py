@@ -784,6 +784,16 @@ class ASEBackend(Backend):
             ... )
             >>> backend.integrator = dyn  # Attach integrator for step tracking
         """
+        # Validate bias_atom_indices against atoms size before creating GADESBias
+        # (GADESBias validation is skipped when backend=None)
+        n_atoms = len(atoms)
+        max_index = max(bias_atom_indices)
+        if max_index >= n_atoms:
+            raise ValueError(
+                f"bias_atom_indices contains index {max_index}, but system only has "
+                f"{n_atoms} atoms (valid range: 0 to {n_atoms - 1})"
+            )
+
         # Import here to avoid circular import at module load time
         from .gades import GADESBias
 
