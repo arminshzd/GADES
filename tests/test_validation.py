@@ -536,3 +536,73 @@ class TestSetHessStepSizeValidation:
         """NumPy float delta should work."""
         gades_bias.set_hess_step_size(np.float64(1e-4))
         assert gades_bias.hess_step_size == pytest.approx(1e-4)
+
+
+class TestStabilityIntervalValidation:
+    """Tests for stability_interval functionality."""
+
+    @pytest.fixture
+    def valid_hess_func(self):
+        """A valid callable for hess_func."""
+        def hess(backend, atom_indices, step_size, platform):
+            n_dof = len(atom_indices) * 3
+            return np.eye(n_dof)
+        return hess
+
+    def test_should_check_stability_none_interval(self, valid_hess_func, mock_backend):
+        """should_check_stability returns False when stability_interval is None."""
+        mock_backend.set_currentStep(500)
+        bias = GADESBias(
+            backend=mock_backend,
+            biased_force=None,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=valid_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=None,
+        )
+        assert bias.should_check_stability() is False
+
+    def test_should_check_stability_at_interval(self, valid_hess_func, mock_backend):
+        """should_check_stability returns True at stability_interval multiples."""
+        bias = GADESBias(
+            backend=mock_backend,
+            biased_force=None,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=valid_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=100,
+        )
+        # Step 0 should return False (skip initial step)
+        mock_backend.set_currentStep(0)
+        assert bias.should_check_stability() is False
+
+        # Step 100 should return True
+        mock_backend.set_currentStep(100)
+        assert bias.should_check_stability() is True
+
+        # Step 150 should return False
+        mock_backend.set_currentStep(150)
+        assert bias.should_check_stability() is False
+
+        # Step 200 should return True
+        mock_backend.set_currentStep(200)
+        assert bias.should_check_stability() is True
+
+    def test_should_check_stability_not_at_interval(self, valid_hess_func, mock_backend):
+        """should_check_stability returns False when not at interval."""
+        mock_backend.set_currentStep(150)
+        bias = GADESBias(
+            backend=mock_backend,
+            biased_force=None,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=valid_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=200,
+            stability_interval=100,
+        )
+        assert bias.should_check_stability() is False

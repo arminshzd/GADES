@@ -650,7 +650,23 @@ class GADESBias:
         else:
             self.is_biasing = False
         return self.is_biasing
-    
+
+    def should_check_stability(self) -> bool:
+        """
+        Check if stability should be verified this step.
+
+        Used by ASE backend to determine when to perform temperature-based
+        stability checks. Returns True if ``stability_interval`` is set and
+        the current step is a multiple of that interval.
+
+        Returns:
+            bool: True if stability should be checked, False otherwise.
+        """
+        if self.s_interval is None:
+            return False
+        step = self.backend.get_currentStep()
+        return step > 0 and step % self.s_interval == 0
+
     def register_next_step(self) -> int:
         """
         Define when the bias forces should run next

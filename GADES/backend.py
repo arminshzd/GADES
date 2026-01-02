@@ -1,7 +1,10 @@
+import logging
 import warnings
 from typing import Any, Callable, List, Optional, Sequence, Tuple, TYPE_CHECKING
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from .config import defaults
 
@@ -508,6 +511,17 @@ class GADESCalculator(_Calculator):  # type: ignore[valid-type, misc]
         self.results = self.base_calc.results.copy()
 
         if self.force_updater is not None and 'forces' in self.results:
+            # Check stability at s_interval (if configured)
+            if self.force_updater.should_check_stability():
+                if not self.force_updater._is_stable():
+                    step = self.force_updater.backend.get_currentStep()
+                    logger.warning(
+                        f"step {step}] System is unstable: Removing bias until next cycle..."
+                    )
+                    self.force_updater.remove_bias()
+                    return  # Skip bias application this step
+
+            # Apply bias at interval
             if self.force_updater.applying_bias():
                 bias = self.force_updater.get_gad_force()
                 # Create full-size bias array for partial atom biasing
