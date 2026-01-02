@@ -666,16 +666,30 @@ class GADESBias:
         Check if stability should be verified this step.
 
         Used by ASE backend to determine when to perform temperature-based
-        stability checks. Returns True if ``stability_interval`` is set and
-        the current step is a multiple of that interval.
+        stability checks. Returns True if:
+          - ``stability_interval`` is set and the current step is a multiple
+            of that interval, OR
+          - A post-bias stability check has been scheduled and the current
+            step has reached or passed that scheduled step.
+
+        Post-bias checks are scheduled after each bias update to catch
+        instabilities caused by bias application. This ensures ASE users
+        get stability monitoring even when ``stability_interval=None``.
 
         Returns:
             bool: True if stability should be checked, False otherwise.
         """
-        if self.s_interval is None:
-            return False
         step = self.backend.get_currentStep()
-        return step > 0 and step % self.s_interval == 0
+
+        # Regular interval check
+        if self.s_interval is not None and step > 0 and step % self.s_interval == 0:
+            return True
+
+        # Post-bias check
+        if self.next_postbias_check_step is not None and step >= self.next_postbias_check_step:
+            return True
+
+        return False
 
     def register_next_step(self) -> int:
         """

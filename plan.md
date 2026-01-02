@@ -333,6 +333,19 @@ Added 13 new tests covering `GADESForceUpdater` reporter interface using `MockBa
 
 ## Changelog
 
+### 2026-01-02
+
+- ✅ Implemented `apply_bias/remove_bias` for ASEBackend (G1)
+  - Added `apply_bias()` and `remove_bias()` methods to `ASEBackend`
+  - Methods update `GADESCalculator` stored bias state
+- ✅ Fixed ASE post-bias stability checks (G2)
+  - Modified `should_check_stability()` to check `next_postbias_check_step`
+  - Updated `GADESCalculator.calculate()` to schedule post-bias checks after applying bias
+  - Post-bias checks now cleared after firing
+  - ASE now matches OpenMM: `stability_interval=None` means post-bias checks only
+  - Added 5 tests in `TestGADESCalculatorPostBiasChecks`
+- Total test count: 270 tests passing
+
 ### 2026-01-01
 
 - ✅ Implemented persistent bias for ASE backend (F1 + F2)
@@ -1284,10 +1297,10 @@ backend.gades_bias = gades_bias
 - [x] A1/A2: Fix `compute_hessian_force_fd_block_parallel` to use `get_forces()` for reference forces
 - [x] A5: Fix force API (ASE `get_current_state()` + `get_gad_force()` + add `get_positions()` method)
 - [x] A3: Restore original positions after `get_forces()` calls
-- [ ] A4: Make ASE import conditional/lazy
-- [ ] A6: Handle missing `getTemperature()` in OpenMM stability check
+- [x] A4: Make ASE import conditional/lazy
+- [x] A6: Handle missing `getTemperature()` in OpenMM stability check
 - [x] A10: Fix GADESCalculator shape mismatch for partial atom biasing
-- [ ] A11: Investigate Bofill gradient sign convention
+- [x] A11: Investigate Bofill gradient sign convention
 - [x] A12: Remove redundant `get_positions()` in parallel Hessian
 - [x] A13: Clarify Backend base class interface contract
 - [x] A14: Remove redundant type annotation in `with_gades()`
@@ -1475,3 +1488,16 @@ When the same `biased_force_values` array is passed, OpenMM applies `-bias` whil
 - [x] F2: ASE bias only applied on update steps, not persisted between updates unlike OpenMM (High) ✅ - Fixed by F1
 - [x] F3: `ASEBackend.with_gades` bypasses bounds validation since GADESBias created with `backend=None` (Medium) ✅
 - [x] F4: Warn when `use_bofill_update=True` with `eigensolver='lanczos_hvp'` since Bofill is silently ignored (Low) ✅
+
+**Second Follow-up Audit Findings (from codex_analysis.md round 4):**
+
+- [x] G1: `ASEBackend` missing `apply_bias/remove_bias` - `GADESBias.apply_bias/remove_bias` always call backend methods, but `ASEBackend` lacks these; calling them raises `NotImplementedError` (Medium) ✅
+- [x] G2: ASE has no stability checks with `stability_interval=None` - docs say "post-bias checks only" but ASE has no post-bias scheduling, so zero checks occur (Medium) ✅
+- [ ] G3: OpenMM `get_forces` hard-codes `groups={0}` - physical forces in other groups are excluded from Hessian/bias calculations (Medium) - `GADES/backend.py:320`
+- [ ] G4: `GADESBias` docstring for `eigensolver` only mentions `'numpy'`/`'lanczos'`, missing `'lanczos_hvp'` (Low) - `GADES/gades.py:123`
+
+**Open Questions (round 4):**
+
+- Should ASE officially support `GADESBias.apply_bias/remove_bias`, or document them as OpenMM-only?
+- Should ASE implement post-bias stability checks to match OpenMM reporter behavior?
+- Should OpenMM allow a configurable force-group mask instead of assuming group 0?

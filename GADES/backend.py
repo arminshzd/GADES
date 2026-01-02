@@ -524,12 +524,17 @@ class GADESCalculator(_Calculator):  # type: ignore[valid-type, misc]
                         f"step {step}] System is unstable: Removing bias until next cycle..."
                     )
                     self.force_updater.remove_bias()
+                # Clear post-bias check after it fires
+                self.force_updater.next_postbias_check_step = None
 
             # Step 2: At bias update intervals, recompute and apply (only if stable)
             if is_stable and self.force_updater.applying_bias():
                 step = self.force_updater.backend.get_currentStep()
                 logger.info(f"step {step}] Updating bias forces...")
                 self.force_updater.apply_bias()
+                # Schedule post-bias stability check
+                post_bias_delay = defaults["post_bias_check_delay"]
+                self.force_updater.next_postbias_check_step = step + post_bias_delay
 
             # Step 3: Apply stored bias (if active)
             if self._bias_active and self._stored_bias is not None:

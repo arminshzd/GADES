@@ -859,6 +859,233 @@ class TestGADESCalculatorPersistentBias:
         assert gades_calc._stored_bias is not None
 
 
+class TestGADESCalculatorPostBiasChecks:
+    """Tests for ASE post-bias stability checks (G2 fix)."""
+
+    def test_post_bias_check_scheduled_after_applying_bias(self):
+        """Post-bias check should be scheduled after applying bias."""
+        from GADES.config import defaults
+
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        base_calc.results['forces'] = np.ones((n_atoms, 3))
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+            stability_interval=None,  # No regular checks - only post-bias
+        )
+
+        gades_calc = atoms.calc
+        gades_bias = backend.gades_bias
+
+        # Initially no post-bias check scheduled
+        assert gades_bias.next_postbias_check_step is None
+
+        # Step 100: apply bias
+        backend.integrator = MockIntegrator(nsteps=100)
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        # Post-bias check should be scheduled
+        expected_check_step = 100 + defaults["post_bias_check_delay"]
+        assert gades_bias.next_postbias_check_step == expected_check_step
+
+    def test_should_check_stability_true_at_postbias_step(self):
+        """should_check_stability() should return True at post-bias check step."""
+        from GADES.config import defaults
+
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        base_calc.results['forces'] = np.ones((n_atoms, 3))
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+            stability_interval=None,  # No regular checks
+        )
+
+        gades_bias = backend.gades_bias
+        post_bias_delay = defaults["post_bias_check_delay"]
+
+        # Step 100: apply bias, schedules post-bias check
+        backend.integrator = MockIntegrator(nsteps=100)
+        atoms.calc.calculate(atoms=atoms, properties=('forces',))
+
+        # Step 101-199: should NOT check stability (before post-bias step)
+        backend.integrator = MockIntegrator(nsteps=101)
+        assert gades_bias.should_check_stability() is False
+
+        backend.integrator = MockIntegrator(nsteps=100 + post_bias_delay - 1)
+        assert gades_bias.should_check_stability() is False
+
+        # Step at post-bias check: SHOULD check stability
+        backend.integrator = MockIntegrator(nsteps=100 + post_bias_delay)
+        assert gades_bias.should_check_stability() is True
+
+    def test_post_bias_check_cleared_after_firing(self):
+        """Post-bias check should be cleared after it fires."""
+        from GADES.config import defaults
+
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms, temperature=300.0)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        base_calc.results['forces'] = np.ones((n_atoms, 3))
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        # Use interval=150 so post-bias check (step 250) doesn't coincide with
+        # a bias update step (multiples of 150: 150, 300, 450, ...)
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=150,
+            stability_interval=None,
+            target_temperature=300.0,
+        )
+
+        gades_calc = atoms.calc
+        gades_bias = backend.gades_bias
+        post_bias_delay = defaults["post_bias_check_delay"]  # 100
+
+        # Step 150: apply bias (first update step for interval=150)
+        backend.integrator = MockIntegrator(nsteps=150)
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        # Post-bias check scheduled at step 250 (150 + 100)
+        assert gades_bias.next_postbias_check_step == 150 + post_bias_delay
+
+        # Step 250: post-bias check fires (not a bias update step)
+        backend.integrator = MockIntegrator(nsteps=150 + post_bias_delay)
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        # Post-bias check should be cleared (and no new one scheduled since not update step)
+        assert gades_bias.next_postbias_check_step is None
+
+    def test_stability_interval_none_still_gets_post_bias_checks(self):
+        """With stability_interval=None, post-bias checks should still occur."""
+        from GADES.config import defaults
+
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms, temperature=300.0)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        base_calc.results['forces'] = np.ones((n_atoms, 3))
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+            stability_interval=None,  # Key: no regular interval checks
+            target_temperature=300.0,
+        )
+
+        gades_calc = atoms.calc
+        gades_bias = backend.gades_bias
+        post_bias_delay = defaults["post_bias_check_delay"]
+
+        # Step 100: apply bias
+        backend.integrator = MockIntegrator(nsteps=100)
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+        assert gades_bias.next_postbias_check_step == 100 + post_bias_delay
+
+        # Before post-bias check step, stability should not be checked
+        backend.integrator = MockIntegrator(nsteps=150)
+        assert gades_bias.should_check_stability() is False
+
+        # At post-bias check step, stability SHOULD be checked
+        backend.integrator = MockIntegrator(nsteps=100 + post_bias_delay)
+        assert gades_bias.should_check_stability() is True
+
+    def test_post_bias_check_detects_instability(self):
+        """Post-bias check should detect instability and remove bias."""
+        from GADES.config import defaults
+
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms, temperature=300.0)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        base_calc.results['forces'] = np.ones((n_atoms, 3))
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+            stability_interval=None,  # Only post-bias checks
+            target_temperature=300.0,
+        )
+
+        gades_calc = atoms.calc
+        post_bias_delay = defaults["post_bias_check_delay"]
+
+        # Step 100: apply bias
+        backend.integrator = MockIntegrator(nsteps=100)
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+        assert gades_calc._bias_active is True
+
+        # Simulate instability: temperature spikes after bias applied
+        atoms._temperature = 400.0  # 100K deviation > 50K threshold
+
+        # Step at post-bias check: should detect instability
+        backend.integrator = MockIntegrator(nsteps=100 + post_bias_delay)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        # Bias should be cleared due to instability
+        assert gades_calc._bias_active is False
+        assert gades_calc._stored_bias is None
+
+
 # ============================================================================
 # OpenMMBackend Tests
 # ============================================================================
