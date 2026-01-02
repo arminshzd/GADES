@@ -64,8 +64,9 @@ class GADESBias:
                 `GADES.utils.compute_hessian_force_fd_richardson` (recommended) or
                 `GADES.utils.compute_hessian_force_fd_block_serial`.
             clamp_magnitude (float):
-                Maximum allowed magnitude for each component of the bias force,
-                used to prevent unphysical updates or exploration of irrelavant
+                Maximum allowed magnitude for each atom's bias force vector.
+                Forces exceeding this magnitude are rescaled (direction preserved).
+                Used to prevent unphysical updates or exploration of irrelevant
                 regions.
             kappa (float):
                 Scaling factor (0 < κ < 1) applied to the bias force along the
@@ -789,8 +790,9 @@ class GADESForceUpdater(GADESBias):
                 `GADES.utils.compute_hessian_force_fd_richardson` (recommended) or
                 `GADES.utils.compute_hessian_force_fd_block_serial`.
             clamp_magnitude (float):
-                Maximum allowed magnitude for each component of the bias force,
-                used to prevent unphysical updates or exploration of irrelevant
+                Maximum allowed magnitude for each atom's bias force vector.
+                Forces exceeding this magnitude are rescaled (direction preserved).
+                Used to prevent unphysical updates or exploration of irrelevant
                 regions.
             kappa (float):
                 Scaling factor (0 < κ < 1) applied to the bias force along the
