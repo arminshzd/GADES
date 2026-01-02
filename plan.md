@@ -1495,9 +1495,3 @@ When the same `biased_force_values` array is passed, OpenMM applies `-bias` whil
 - [x] G2: ASE has no stability checks with `stability_interval=None` - docs say "post-bias checks only" but ASE has no post-bias scheduling, so zero checks occur (Medium) ✅
 - [x] G3: OpenMM `get_forces` hard-codes `groups={0}` - physical forces in other groups are excluded from Hessian/bias calculations (Medium) ✅ Documented in docstring
 - [x] G4: `GADESBias` docstring for `eigensolver` only mentions `'numpy'`/`'lanczos'`, missing `'lanczos_hvp'` (Low) ✅
-
-**Open Questions (round 4):**
-
-- Should ASE officially support `GADESBias.apply_bias/remove_bias`, or document them as OpenMM-only?
-- Should ASE implement post-bias stability checks to match OpenMM reporter behavior?
-- Should OpenMM allow a configurable force-group mask instead of assuming group 0?
