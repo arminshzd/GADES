@@ -585,6 +585,234 @@ class TestGADESCalculatorPartialBiasing:
         )
 
 
+class TestGADESCalculatorPersistentBias:
+    """Tests for GADESCalculator persistent bias behavior (F1)."""
+
+    def test_bias_stored_after_applying(self):
+        """Bias should be stored after applying_bias() returns True."""
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        base_calc.results['forces'] = np.ones((n_atoms, 3))
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+        )
+
+        gades_calc = atoms.calc
+
+        # Initially no stored bias
+        assert gades_calc._stored_bias is None
+        assert gades_calc._bias_active is False
+
+        # Step 100 triggers bias computation
+        backend.integrator = MockIntegrator(nsteps=100)
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        # Bias should now be stored
+        assert gades_calc._stored_bias is not None
+        assert gades_calc._bias_active is True
+        assert gades_calc._stored_bias.shape == (n_atoms, 3)
+
+    def test_stored_bias_applied_at_non_update_steps(self):
+        """Stored bias should be applied at steps between updates."""
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        original_forces = np.ones((n_atoms, 3))
+        base_calc.results['forces'] = original_forces.copy()
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+        )
+
+        gades_calc = atoms.calc
+
+        # Step 100: compute and store bias
+        backend.integrator = MockIntegrator(nsteps=100)
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+        stored_bias = gades_calc._stored_bias.copy()
+
+        # Step 101: NOT an update step, but stored bias should still be applied
+        backend.integrator = MockIntegrator(nsteps=101)
+        base_calc.results['forces'] = original_forces.copy()
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        # Forces should include the stored bias
+        expected = original_forces + stored_bias
+        np.testing.assert_array_almost_equal(
+            gades_calc.results['forces'],
+            expected,
+            err_msg="Stored bias should be applied at non-update steps"
+        )
+
+    def test_bias_persists_across_multiple_steps(self):
+        """Same bias should be applied across multiple steps until next update."""
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        original_forces = np.ones((n_atoms, 3))
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+        )
+
+        gades_calc = atoms.calc
+
+        # Step 100: compute bias
+        backend.integrator = MockIntegrator(nsteps=100)
+        base_calc.results['forces'] = original_forces.copy()
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+        stored_bias = gades_calc._stored_bias.copy()
+
+        # Steps 101-105: same bias should be applied
+        for step in [101, 102, 103, 104, 105]:
+            backend.integrator = MockIntegrator(nsteps=step)
+            base_calc.results['forces'] = original_forces.copy()
+            gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+            expected = original_forces + stored_bias
+            np.testing.assert_array_almost_equal(
+                gades_calc.results['forces'],
+                expected,
+                err_msg=f"Stored bias should persist at step {step}"
+            )
+
+    def test_stability_failure_clears_bias(self):
+        """Stability failure should clear stored bias."""
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms, temperature=300.0)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        base_calc.results['forces'] = np.ones((n_atoms, 3))
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+            stability_interval=500,
+            target_temperature=300.0,
+        )
+
+        gades_calc = atoms.calc
+
+        # Step 100: compute bias
+        backend.integrator = MockIntegrator(nsteps=100)
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+        assert gades_calc._bias_active is True
+
+        # Step 500: stability check - simulate unstable by setting high temperature
+        backend.integrator = MockIntegrator(nsteps=500)
+        # Make is_stable return False by setting temperature far from target (300K)
+        atoms._temperature = 400.0  # 100K deviation > 50K threshold
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        # Bias should be cleared
+        assert gades_calc._stored_bias is None
+        assert gades_calc._bias_active is False
+
+    def test_bias_restored_after_instability(self):
+        """Bias should be restored at next update interval after instability."""
+        n_atoms = 10
+        bias_indices = [0, 1, 2]
+
+        atoms = MockAtoms(n_atoms=n_atoms, temperature=300.0)
+        base_calc = MockBaseCalculator(n_atoms=n_atoms)
+        original_forces = np.ones((n_atoms, 3))
+        base_calc.results['forces'] = original_forces.copy()
+
+        def mock_hess_func(backend, atom_indices, step_size, platform):
+            n = len(atom_indices) * 3
+            return np.eye(n)
+
+        backend = ASEBackend.with_gades(
+            atoms=atoms,
+            base_calc=base_calc,
+            bias_atom_indices=bias_indices,
+            hess_func=mock_hess_func,
+            clamp_magnitude=1000,
+            kappa=0.9,
+            interval=100,
+            stability_interval=500,
+            target_temperature=300.0,
+        )
+
+        gades_calc = atoms.calc
+
+        # Step 100: compute bias
+        backend.integrator = MockIntegrator(nsteps=100)
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+        assert gades_calc._bias_active is True
+
+        # Step 500: trigger instability
+        backend.integrator = MockIntegrator(nsteps=500)
+        atoms._temperature = 400.0  # 100K deviation > 50K threshold
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        assert gades_calc._bias_active is False
+
+        # Step 600: next update interval - restore temperature and compute bias
+        backend.integrator = MockIntegrator(nsteps=600)
+        atoms._temperature = 300.0  # Back to normal
+        base_calc.results['forces'] = original_forces.copy()
+        gades_calc.calculate(atoms=atoms, properties=('forces',))
+
+        # Bias should be restored
+        assert gades_calc._bias_active is True
+        assert gades_calc._stored_bias is not None
+
+
 # ============================================================================
 # OpenMMBackend Tests
 # ============================================================================

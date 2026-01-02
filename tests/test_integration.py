@@ -257,7 +257,8 @@ class TestBofillUpdateIntegration:
 
         # First call should compute full Hessian
         positions, forces = backend.get_current_state()
-        hess = bias._get_hessian(positions, forces)
+        step = backend.get_currentStep()
+        hess = bias._get_hessian(positions, forces, step)
 
         # Should have stored state for future Bofill updates
         assert bias._last_hess is not None
@@ -285,7 +286,7 @@ class TestBofillUpdateIntegration:
         # First call at step 200 - computes full Hessian
         backend.set_currentStep(200)
         positions1, forces1 = backend.get_current_state()
-        hess1 = bias._get_hessian(positions1, forces1)
+        hess1 = bias._get_hessian(positions1, forces1, 200)
         first_hess_step = bias._last_hess_step
 
         # Second call at step 400 - should use Bofill approximation
@@ -294,7 +295,7 @@ class TestBofillUpdateIntegration:
         backend._positions += 0.01
         backend._forces += 0.01
         positions2, forces2 = backend.get_current_state()
-        hess2 = bias._get_hessian(positions2, forces2)
+        hess2 = bias._get_hessian(positions2, forces2, 400)
 
         # _last_hess_step should not have changed (no full Hessian computed)
         assert bias._last_hess_step == first_hess_step
@@ -323,17 +324,17 @@ class TestBofillUpdateIntegration:
         # First call at step 0 - computes full Hessian
         backend.set_currentStep(0)
         positions, forces = backend.get_current_state()
-        bias._get_hessian(positions, forces)
+        bias._get_hessian(positions, forces, 0)
         assert bias._last_hess_step == 0
 
         # Call at step 200 - Bofill approximation
         backend.set_currentStep(200)
-        bias._get_hessian(positions, forces)
+        bias._get_hessian(positions, forces, 200)
         assert bias._last_hess_step == 0  # Still from step 0
 
         # Call at step 500 - should recompute full Hessian
         backend.set_currentStep(500)
-        bias._get_hessian(positions, forces)
+        bias._get_hessian(positions, forces, 500)
         assert bias._last_hess_step == 500  # Updated to step 500
 
     def test_bofill_disabled_always_computes_full(self, simple_hess_func, mock_backend_for_bofill):
@@ -363,15 +364,15 @@ class TestBofillUpdateIntegration:
 
         # Each call should compute full Hessian
         backend.set_currentStep(200)
-        bias._get_hessian(positions, forces)
+        bias._get_hessian(positions, forces, 200)
         assert call_count[0] == 1
 
         backend.set_currentStep(400)
-        bias._get_hessian(positions, forces)
+        bias._get_hessian(positions, forces, 400)
         assert call_count[0] == 2
 
         backend.set_currentStep(600)
-        bias._get_hessian(positions, forces)
+        bias._get_hessian(positions, forces, 600)
         assert call_count[0] == 3
 
 

@@ -496,6 +496,9 @@ class GADESCalculator(_Calculator):  # type: ignore[valid-type, misc]
         self.force_updater = gades_force_updater
         self.atoms = base_calc.atoms
         self._name = "gades_calculator"
+        # Persistent bias state for continuous application between update intervals
+        self._stored_bias: Optional[np.ndarray] = None
+        self._bias_active: bool = False
 
     def calculate(
         self,
@@ -511,23 +514,30 @@ class GADESCalculator(_Calculator):  # type: ignore[valid-type, misc]
         self.results = self.base_calc.results.copy()
 
         if self.force_updater is not None and 'forces' in self.results:
-            # Check stability at s_interval (if configured)
+            # Step 1: Check stability - clear bias if unstable
+            is_stable = True
             if self.force_updater.should_check_stability():
-                if not self.force_updater._is_stable():
+                is_stable = self.force_updater._is_stable()
+                if not is_stable:
                     step = self.force_updater.backend.get_currentStep()
                     logger.warning(
                         f"step {step}] System is unstable: Removing bias until next cycle..."
                     )
-                    self.force_updater.remove_bias()
-                    return  # Skip bias application this step
+                    self._stored_bias = None
+                    self._bias_active = False
 
-            # Apply bias at interval
-            if self.force_updater.applying_bias():
+            # Step 2: At bias update intervals, recompute and store (only if stable)
+            if is_stable and self.force_updater.applying_bias():
+                step = self.force_updater.backend.get_currentStep()
+                logger.info(f"step {step}] Updating bias forces...")
                 bias = self.force_updater.get_gad_force()
-                # Create full-size bias array for partial atom biasing
-                full_bias = np.zeros_like(self.results['forces'])
-                full_bias[self.force_updater.bias_atom_indices, :] = bias
-                self.results['forces'] = self.results['forces'] + full_bias
+                self._stored_bias = np.zeros_like(self.results['forces'])
+                self._stored_bias[self.force_updater.bias_atom_indices, :] = bias
+                self._bias_active = True
+
+            # Step 3: Apply stored bias (if active)
+            if self._bias_active and self._stored_bias is not None:
+                self.results['forces'] = self.results['forces'] + self._stored_bias
 
 class ASEBackend(Backend):
     """
