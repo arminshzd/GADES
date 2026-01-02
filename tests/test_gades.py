@@ -843,6 +843,15 @@ class TestBofillIntegration:
         assert bias._last_forces is None
         assert bias._last_hess_step == -1
 
+    def test_bofill_with_lanczos_hvp_warns(self, valid_gades_params):
+        """Using Bofill with lanczos_hvp should emit a warning."""
+        params = valid_gades_params.copy()
+        params['use_bofill_update'] = True
+        params['eigensolver'] = 'lanczos_hvp'
+
+        with pytest.warns(UserWarning, match="use_bofill_update=True has no effect"):
+            GADESBias(**params)
+
     def test_bofill_first_call_computes_full_hessian(self, mock_backend_factory):
         """First call should always compute full Hessian."""
         n_atoms = 3

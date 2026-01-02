@@ -1474,4 +1474,4 @@ When the same `biased_force_values` array is passed, OpenMM applies `-bias` whil
 - [x] F1: ASE bias persistence and stability handling (High) ✅ - Implemented persistent bias in GADESCalculator
 - [x] F2: ASE bias only applied on update steps, not persisted between updates unlike OpenMM (High) ✅ - Fixed by F1
 - [x] F3: `ASEBackend.with_gades` bypasses bounds validation since GADESBias created with `backend=None` (Medium) ✅
-- [ ] F4: Warn when `use_bofill_update=True` with `eigensolver='lanczos_hvp'` since Bofill is silently ignored (Low)
+- [x] F4: Warn when `use_bofill_update=True` with `eigensolver='lanczos_hvp'` since Bofill is silently ignored (Low) ✅

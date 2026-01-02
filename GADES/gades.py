@@ -222,6 +222,15 @@ class GADESBias:
             if not isinstance(full_hessian_interval, (int, np.integer)) or full_hessian_interval <= 0:
                 raise ValueError(f"full_hessian_interval must be a positive integer, got {full_hessian_interval}")
 
+        # Warn if Bofill is enabled with lanczos_hvp (Bofill has no effect)
+        if use_bofill_update and eigensolver == 'lanczos_hvp':
+            warnings.warn(
+                "use_bofill_update=True has no effect with eigensolver='lanczos_hvp'. "
+                "The lanczos_hvp method computes Hessian-vector products via finite differences "
+                "and does not use an explicit Hessian matrix that Bofill could update.",
+                UserWarning
+            )
+
         # --- Attribute assignment ---
         self.backend = backend
         self.biased_force = biased_force
