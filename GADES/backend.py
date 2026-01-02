@@ -514,7 +514,7 @@ class GADESCalculator(_Calculator):  # type: ignore[valid-type, misc]
         self.results = self.base_calc.results.copy()
 
         if self.force_updater is not None and 'forces' in self.results:
-            # Step 1: Check stability - clear bias if unstable
+            # Step 1: Check stability - remove bias if unstable
             is_stable = True
             if self.force_updater.should_check_stability():
                 is_stable = self.force_updater._is_stable()
@@ -523,17 +523,13 @@ class GADESCalculator(_Calculator):  # type: ignore[valid-type, misc]
                     logger.warning(
                         f"step {step}] System is unstable: Removing bias until next cycle..."
                     )
-                    self._stored_bias = None
-                    self._bias_active = False
+                    self.force_updater.remove_bias()
 
-            # Step 2: At bias update intervals, recompute and store (only if stable)
+            # Step 2: At bias update intervals, recompute and apply (only if stable)
             if is_stable and self.force_updater.applying_bias():
                 step = self.force_updater.backend.get_currentStep()
                 logger.info(f"step {step}] Updating bias forces...")
-                bias = self.force_updater.get_gad_force()
-                self._stored_bias = np.zeros_like(self.results['forces'])
-                self._stored_bias[self.force_updater.bias_atom_indices, :] = bias
-                self._bias_active = True
+                self.force_updater.apply_bias()
 
             # Step 3: Apply stored bias (if active)
             if self._bias_active and self._stored_bias is not None:
@@ -722,6 +718,43 @@ class ASEBackend(Backend):
         if abs(current_temp - target_temp) > threshold:
             return False
         return True
+
+    def apply_bias(
+        self,
+        bias_force_object: Any,
+        biased_force_values: np.ndarray,
+        bias_atom_indices: Sequence[int],
+    ) -> None:
+        """
+        Apply bias forces by storing them in GADESCalculator.
+
+        This method stores the bias values in the calculator's internal state,
+        which will be added to forces during each calculate() call.
+
+        Args:
+            bias_force_object: Unused for ASE (exists for API compatibility).
+            biased_force_values: Bias force values with shape ``(M, 3)``.
+            bias_atom_indices: Indices of atoms to bias.
+        """
+        calc = self.atoms.calc
+        n_atoms = len(self.atoms)
+        calc._stored_bias = np.zeros((n_atoms, 3))
+        calc._stored_bias[bias_atom_indices, :] = biased_force_values
+        calc._bias_active = True
+
+    def remove_bias(
+        self, bias_force_object: Any, bias_atom_indices: Sequence[int]
+    ) -> None:
+        """
+        Remove bias forces by clearing GADESCalculator's stored bias.
+
+        Args:
+            bias_force_object: Unused for ASE (exists for API compatibility).
+            bias_atom_indices: Unused for ASE (exists for API compatibility).
+        """
+        calc = self.atoms.calc
+        calc._stored_bias = None
+        calc._bias_active = False
 
     @classmethod
     def with_gades(
