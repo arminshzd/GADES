@@ -295,9 +295,10 @@ class OpenMMBackend(Backend):
         Compute the original (unbiased) forces from an OpenMM context (internal use only).
 
         This function updates the context with the provided positions, then retrieves
-        forces from force group `0` only. Group `0` is assumed to correspond to the
-        system's original potential (e.g., the PMF) without additional bias terms.
-        The forces are converted to units of kJ/mol/nm and flattened into a 1D array.
+        forces from force group 0 only. Group 0 is assumed to contain the system's
+        physical potential (e.g., the force field / PMF), while GADES bias forces are
+        assigned to a separate group (default: group 1, configurable via
+        ``defaults["gades_force_group"]``).
 
         Args:
             positions: Atomic positions, shaped ``(N, 3)`` in nanometers.
@@ -306,9 +307,17 @@ class OpenMMBackend(Backend):
             Flattened force vector of shape ``(3 * N,)``, in units of kJ/mol/nm.
 
         Notes:
-            By restricting to ``groups={0}``, the returned forces exclude any
-            externally applied bias forces (e.g., from GADES).
             Original positions are restored after force computation.
+
+        Important:
+            **Force group 0 is hard-coded** (see line with ``groups={0}`` below).
+            If your simulation has physical forces in other groups (e.g., groups 2, 3),
+            they will be excluded from Hessian and bias calculations. For most OpenMM
+            simulations this is not an issue since all forces default to group 0.
+
+            If you need to include forces from multiple groups, modify the
+            ``groups={0}`` parameter in this method to include all relevant groups,
+            excluding only the GADES force group.
         """
         # Save original positions
         original_positions = self.get_positions()
