@@ -1494,7 +1494,7 @@ When the same `biased_force_values` array is passed, OpenMM applies `-bias` whil
 - [x] G1: `ASEBackend` missing `apply_bias/remove_bias` - `GADESBias.apply_bias/remove_bias` always call backend methods, but `ASEBackend` lacks these; calling them raises `NotImplementedError` (Medium) ✅
 - [x] G2: ASE has no stability checks with `stability_interval=None` - docs say "post-bias checks only" but ASE has no post-bias scheduling, so zero checks occur (Medium) ✅
 - [x] G3: OpenMM `get_forces` hard-codes `groups={0}` - physical forces in other groups are excluded from Hessian/bias calculations (Medium) ✅ Documented in docstring
-- [ ] G4: `GADESBias` docstring for `eigensolver` only mentions `'numpy'`/`'lanczos'`, missing `'lanczos_hvp'` (Low) - `GADES/gades.py:123`
+- [x] G4: `GADESBias` docstring for `eigensolver` only mentions `'numpy'`/`'lanczos'`, missing `'lanczos_hvp'` (Low) ✅
 
 **Open Questions (round 4):**
 

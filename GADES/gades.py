@@ -127,7 +127,7 @@ class GADESBias:
             ValueError: If `clamp_magnitude` is not a positive number.
             ValueError: If `interval` is not a positive integer.
             ValueError: If `stability_interval` is provided but not a positive integer.
-            ValueError: If `eigensolver` is not one of 'numpy' or 'lanczos'.
+            ValueError: If `eigensolver` is not one of 'numpy', 'lanczos', or 'lanczos_hvp'.
             OSError: If log files cannot be created when `logfile_prefix` is set.
 
         Warns:
