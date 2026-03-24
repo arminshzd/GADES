@@ -5,6 +5,9 @@
 Gentlest Ascent Dynamics for Enhanced Sampling.
 GADES is an enhanced sampling method based on Gentlest Ascent Dynamics (GAD) for exploring molecular configuration space without prior knowledge of reaction coordinates.
 
+> [!NOTE]
+> There is a faster, more efficient version with ASE backend support of this repo is available under the `ase-backend` branch. However, not all parts of the code in that branch has been fully tested. Once the testing is complete, that branch will be merged into `main`. For now, if you need to use the ASE backend, use the version under `ase-backend` with caution.
+
 ## Installation
 
 to install, clone the repository
