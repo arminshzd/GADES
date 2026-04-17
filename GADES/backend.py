@@ -471,9 +471,11 @@ def _get_openMM_forces(
 try:
     from ase.calculators.calculator import Calculator as _Calculator, all_changes as _all_changes
     from ase import Atoms as _Atoms
+    from ase import units as _ase_units
     _ASE_AVAILABLE = True
 except ImportError:
     _ASE_AVAILABLE = False
+    _ase_units = None  # type: ignore[assignment]
     _Calculator = object  # type: ignore[misc, assignment]
     _all_changes = []  # type: ignore[assignment]
     _Atoms = None  # type: ignore[misc, assignment]
@@ -558,9 +560,12 @@ class ASEBackend(Backend):
             GADES bias forces.
         atoms: The ASE Atoms object.
         target_temperature: Target temperature in Kelvin for stability checking.
-            If not provided, the backend will attempt to read it from the integrator
-            (works for Langevin, NVTBerendsen, NPTBerendsen). If neither is available,
-            stability checking will be skipped with a warning.
+            **It is strongly recommended to set this explicitly.** If not provided,
+            the backend will attempt to read it from the integrator (works for
+            ``Langevin``, ``NVTBerendsen``, ``NPTBerendsen``), but this is fragile
+            because ASE integrators use different attribute names and units internally.
+            If no temperature can be determined, stability checking will be skipped
+            with a warning.
 
     Raises:
         ImportError: If ASE is not installed.
@@ -677,9 +682,24 @@ class ASEBackend(Backend):
 
         Returns the target temperature in Kelvin, trying in order:
 
-        1. ``self.target_temperature`` if set explicitly
-        2. Integrator's temperature attribute (for NVT/NPT integrators)
-        3. ``None`` if neither is available
+        1. ``self.target_temperature`` if set explicitly (recommended)
+        2. ``integrator.temp`` — ASE ``Langevin`` stores this in **eV**
+           (``units.kB * temperature_K``), so it is converted to Kelvin by
+           dividing by ``units.kB``.
+        3. ``integrator.temperature`` — ``NVTBerendsen`` and ``NPTBerendsen``
+           store this in **Kelvin** and is returned directly.
+        4. ``integrator._kT`` — Nose-Hoover variants (``NoseHooverChainNVT``,
+           ``IsotropicMTKNPT``, ``MTKNPT``, etc.) store this in **eV**
+           (``units.kB * temperature_K``), so it is converted to Kelvin by
+           dividing by ``units.kB``.
+        5. ``None`` if none of the above are available.
+
+        .. warning::
+            Auto-detection via the integrator attribute is fragile: different
+            ASE integrators use different attribute names and units, and some
+            (e.g. ``NoseHooverChain``) expose neither.  **Always set
+            ``target_temperature`` explicitly in the** ``ASEBackend``
+            **constructor** to guarantee correct stability checks.
 
         Returns:
             Target temperature in Kelvin, or ``None`` if unavailable.
@@ -690,12 +710,16 @@ class ASEBackend(Backend):
 
         # Try to get from integrator
         if self.integrator is not None:
-            # ASE Langevin integrator stores temperature in 'temp' attribute (in Kelvin)
+            # ASE Langevin stores self.temp = units.kB * temperature_K (in eV)
             if hasattr(self.integrator, 'temp'):
-                return self.integrator.temp
-            # NVTBerendsen and NPTBerendsen store it in 'temperature'
+                return self.integrator.temp / _ase_units.kB
+            # NVTBerendsen and NPTBerendsen store temperature in Kelvin
             if hasattr(self.integrator, 'temperature'):
                 return self.integrator.temperature
+            # Nose-Hoover variants (NoseHooverChainNVT, IsotropicMTKNPT, MTKNPT, ...)
+            # store self._kT = units.kB * temperature_K (in eV)
+            if hasattr(self.integrator, '_kT'):
+                return self.integrator._kT / _ase_units.kB
 
         return None
 
@@ -811,6 +835,9 @@ class ASEBackend(Backend):
             full_hessian_interval: Steps between full Hessian recomputation (if using Bofill).
             hvp_epsilon: Finite difference step size for HVP (if using 'lanczos_hvp').
             target_temperature: Target temperature in Kelvin for stability checking.
+                **It is strongly recommended to set this explicitly** rather than
+                relying on auto-detection from the integrator, which is fragile
+                across different ASE integrator types.
 
         Returns:
             Fully configured ASEBackend with ``gades_bias`` attribute accessible.

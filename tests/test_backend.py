@@ -8,12 +8,14 @@ import numpy as np
 # Try to import backend module - may fail if ASE not installed
 try:
     from GADES.backend import Backend, ASEBackend, GADESCalculator
+    from ase import units as ase_units
     HAS_BACKEND = True
 except ImportError:
     HAS_BACKEND = False
     Backend = None
     ASEBackend = None
     GADESCalculator = None
+    ase_units = None
 
 pytestmark = pytest.mark.skipif(not HAS_BACKEND, reason="ASE not installed")
 
@@ -96,7 +98,7 @@ class MockBaseCalculator:
 class MockIntegrator:
     """Mock integrator for testing."""
 
-    def __init__(self, nsteps=0, temp=None, temperature=None):
+    def __init__(self, nsteps=0, temp=None, temperature=None, _kT=None):
         self.nsteps = nsteps
         # Langevin style
         if temp is not None:
@@ -104,6 +106,9 @@ class MockIntegrator:
         # Berendsen style
         if temperature is not None:
             self.temperature = temperature
+        # Nose-Hoover style
+        if _kT is not None:
+            self._kT = _kT
 
 
 class MockGADESCalculator:
@@ -163,15 +168,15 @@ class TestASEBackendGetTargetTemperature:
         assert backend._get_target_temperature() == 350.0
 
     def test_langevin_integrator_temp(self):
-        """Should read temp from Langevin-style integrator."""
+        """Should read temp from Langevin-style integrator and convert from eV to Kelvin."""
         atoms = MockAtoms()
         calc = MockGADESCalculator(MockBaseCalculator())
         backend = ASEBackend(calc, atoms)
 
-        # Set integrator with 'temp' attribute (Langevin style)
-        backend.integrator = MockIntegrator(temp=400.0)
+        # Real ASE Langevin stores self.temp = units.kB * temperature_K (in eV)
+        backend.integrator = MockIntegrator(temp=400.0 * ase_units.kB)
 
-        assert backend._get_target_temperature() == 400.0
+        assert backend._get_target_temperature() == pytest.approx(400.0)
 
     def test_berendsen_integrator_temperature(self):
         """Should read temperature from Berendsen-style integrator."""
@@ -184,12 +189,23 @@ class TestASEBackendGetTargetTemperature:
 
         assert backend._get_target_temperature() == 450.0
 
+    def test_nose_hoover_integrator_kT(self):
+        """Should read _kT from Nose-Hoover-style integrator and convert from eV to Kelvin."""
+        atoms = MockAtoms()
+        calc = MockGADESCalculator(MockBaseCalculator())
+        backend = ASEBackend(calc, atoms)
+
+        # Real ASE Nose-Hoover stores self._kT = units.kB * temperature_K (in eV)
+        backend.integrator = MockIntegrator(_kT=500.0 * ase_units.kB)
+
+        assert backend._get_target_temperature() == pytest.approx(500.0)
+
     def test_explicit_overrides_integrator(self):
         """Explicit target_temperature should override integrator."""
         atoms = MockAtoms()
         calc = MockGADESCalculator(MockBaseCalculator())
         backend = ASEBackend(calc, atoms, target_temperature=350.0)
-        backend.integrator = MockIntegrator(temp=400.0)
+        backend.integrator = MockIntegrator(temp=400.0 * ase_units.kB)
 
         # Explicit should take precedence
         assert backend._get_target_temperature() == 350.0
