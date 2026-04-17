@@ -281,6 +281,42 @@ class TestApplyBias:
         assert backend._last_applied_bias.shape == (len(bias_indices), 3)
 
 
+    def test_applying_bias_logs_once_per_bias_step(self, mock_backend_factory, simple_hess_func, tmp_path):
+        """Regression test: applying_bias() is stateless, so calling apply_bias() twice on the
+        same bias step (as ASE does via multiple calculate() calls) writes two evec log entries."""
+        interval = 200
+        backend = mock_backend_factory()
+        backend.set_currentStep(interval)  # a bias step
+
+        logfile_prefix = str(tmp_path / "test_dup")
+        bias = GADESBias(
+            backend=backend,
+            biased_force=None,
+            bias_atom_indices=[0, 1, 2],
+            hess_func=simple_hess_func,
+            clamp_magnitude=1000.0,
+            kappa=0.9,
+            interval=interval,
+            logfile_prefix=logfile_prefix,
+        )
+
+        # Simulate two calculate() calls on the same bias step
+        if bias.applying_bias():
+            bias.apply_bias()
+        if bias.applying_bias():
+            bias.apply_bias()
+
+        bias._close_logs()
+
+        evec_lines = [
+            l for l in (tmp_path / "test_dup_evec.log").read_text().strip().split("\n")
+            if not l.startswith("#")
+        ]
+        assert len(evec_lines) == 1, (
+            f"Expected exactly 1 evec entry per bias step, got {len(evec_lines)}"
+        )
+
+
 class TestIsStable:
     """Tests for _is_stable method."""
 

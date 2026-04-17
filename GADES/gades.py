@@ -272,6 +272,7 @@ class GADESBias:
 
         # post bias update check
         self.next_postbias_check_step = None
+        self._last_biased_step = None
 
         # logging
         self.atom_symbols = None
@@ -644,6 +645,7 @@ class GADESBias:
         """
         gad_biased_forces = self.get_gad_force()
         self.backend.apply_bias(self.biased_force, gad_biased_forces, self.bias_atom_indices)
+        self._last_biased_step = self.backend.get_currentStep()
 
     def applying_bias(self) -> bool:
         """
@@ -655,7 +657,7 @@ class GADESBias:
         step = self.backend.get_currentStep()
         if step < 0:
             self.is_biasing = False
-        elif step % self.interval == 0:
+        elif step % self.interval == 0 and step != self._last_biased_step:
             self.is_biasing = True
         else:
             self.is_biasing = False
