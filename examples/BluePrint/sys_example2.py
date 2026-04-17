@@ -1,0 +1,95 @@
+# ---------------------------------MODULE IMPORTS-------------------------------
+import os
+
+import GADES
+from GADES.utils import compute_hessian_force_fd_richardson as hessian
+from GADES import createGADESBiasForce, GADESForceUpdater
+from GADES.backend import OpenMMBackend
+
+# -----------------------------SIMULATION PARAMETERS----------------------------
+NSTEPS = 1e6
+BIASED = 1  # Set to 1 to enable biasing, 0 to disable
+KAPPA = 0.9
+CLAMP_MAGNITUDE = 1000
+STABILITY_CHECK_FREQ = 1000
+BIAS_UPDATE_FREQ = 200
+LOG_PREFIX = "log_prefix"
+PLATFORM = "CPU"
+
+# ---------------------------------USER SYSTEM DEF------------------------------
+from sys import stdout
+import numpy as np
+import openmm.app as app
+from openmm import unit, Platform, MonteCarloBarostat
+from openmm.openmm import LangevinIntegrator
+
+def generate_simulation():
+    #openmm_app_path = os.path.join(app.__path__[0], 'data')
+
+    # LOAD THE SYSTEM TOPOLOGY
+    pdb = app.PDBFile("2src_ref_frame.pdb")
+    # CHOOSE THE ATOMS TO BIAS
+    #biasing_atom_ids = np.array([atom.index for atom in pdb.topology.atoms() if atom.residue.name != 'HOH'])
+    biasing_atom_ids = np.array([atom.index for atom in pdb.topology.atoms() if (atom.name == 'CA' or atom.name == 'C')])
+    if BIASED:
+        print(f"\033[1;32m[GADES] Biasing {len(biasing_atom_ids)} atoms\033[0m")
+
+    # DEFINE FORCEFIELD
+    forcefield = app.ForceField('amber14/protein.ff14SB.xml', 'amber14/lipid17.xml', 'amber14/tip3p.xml')
+
+    # SET THE PLATFORM
+    platform = Platform.getPlatformByName(PLATFORM)
+
+    # CREATE SYSTEM OBJECT
+    system = forcefield.createSystem(pdb.topology, nonbondedMethod=app.PME, constraints=app.HBonds)
+
+    # DEFINE INTEGRATOR
+    integrator = LangevinIntegrator(300 * unit.kelvin, 1 / unit.picosecond, 2 * unit.femtoseconds)
+    #integrator = VerletIntegrator(2 * unit.femtoseconds)
+
+    # DEFINE THERMOSTAT (if needed)
+    #thermostat = AndersenThermostat(300 * unit.kelvin, 1 / unit.picosecond)
+    #system.addForce(thermostat)
+
+    # DEFINE BAROSTAT (if needed)
+    barostat = MonteCarloBarostat(1 * unit.bar, 300 * unit.kelvin)
+    system.addForce(barostat)
+
+    # ADD THE BIAS FORCE TO THE SYSTEM
+    # OpenMM requires that GAD_force added to the system before creating the Simulation object
+    GAD_force = createGADESBiasForce(system.getNumParticles())
+    system.addForce(GAD_force)
+
+    # SET UP THE SIMULATION OBJECT
+    simulation = app.Simulation(pdb.topology, system, integrator, platform)
+    simulation.context.setPositions(pdb.positions)
+
+    # SET UP THE REPORTERS
+    simulation.reporters.append(app.DCDReporter("traj.dcd", 100))
+    simulation.reporters.append(app.StateDataReporter(stdout, 100, step=True, 
+                                                    temperature=True, 
+                                                    elapsedTime=True, 
+                                                    potentialEnergy=True))
+    return simulation, GAD_force, biasing_atom_ids
+
+simulation, GAD_force, biasing_atom_ids = generate_simulation()
+backend = OpenMMBackend(simulation)
+
+# SET UP THE BIASING
+if BIASED:
+    simulation.reporters.append(
+        GADESForceUpdater(
+            backend=backend,
+            biased_force=GAD_force,
+            bias_atom_indices=biasing_atom_ids,
+            hess_func=hessian, 
+            clamp_magnitude=CLAMP_MAGNITUDE,
+            kappa=KAPPA, 
+            interval=BIAS_UPDATE_FREQ, 
+            stability_interval=STABILITY_CHECK_FREQ, 
+            logfile_prefix=LOG_PREFIX
+            )
+    )
+
+# RUN THE SIMULATION
+simulation.step(NSTEPS)

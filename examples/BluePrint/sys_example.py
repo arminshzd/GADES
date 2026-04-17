@@ -2,15 +2,16 @@
 import os
 
 from GADES.utils import compute_hessian_force_fd_richardson as hessian
-from GADES import getGADESBiasForce, GADESForceUpdater
+from GADES import createGADESBiasForce, GADESForceUpdater
+from GADES.backend import OpenMMBackend
 
 # -----------------------------SIMULATION PARAMETERS----------------------------
 NSTEPS = 1e6
-BIASED = 1
+BIASED = 1  # Set to 1 to enable biasing, 0 to disable
 KAPPA = 0.9
 CLAMP_MAGNITUDE = 1000
 STABILITY_CHECK_FREQ = 1000
-BIAS_UPDATE_FREQ = 2000
+BIAS_UPDATE_FREQ = 200
 LOG_PREFIX = "log_prefix"
 PLATFORM = "CPU"
 
@@ -24,15 +25,14 @@ from openmm.openmm import LangevinIntegrator, VerletIntegrator
 openmm_app_path = os.path.join(app.__path__[0], 'data')
 
 # LOAD THE SYSTEM TOPOLOGY
-pdb = app.PDBFile("topology.pdb")
+pdb = app.PDBFile("2src_ref_frame.pdb")
 # CHOOSE THE ATOMS TO BIAS
 biasing_atom_ids = np.array([atom.index for atom in pdb.topology.atoms() if atom.residue.name != 'HOH'])
 if BIASED:
     print(f"\033[1;32m[GADES] Biasing {len(biasing_atom_ids)} atoms\033[0m")
 
 # DEFINE FORCEFIELD
-forcefield = app.ForceField("amber14/protein.ff14SB.xml", 
-                        "amber14/tip3p.xml")
+forcefield = app.ForceField('amber14/protein.ff14SB.xml', 'amber14/lipid17.xml', 'amber14/tip3p.xml')
 
 # SET THE PLATFORM
 platform = Platform.getPlatformByName(PLATFORM)
@@ -53,7 +53,7 @@ barostat = MonteCarloBarostat(1 * unit.bar, 300 * unit.kelvin)
 system.addForce(barostat)
 
 # ADD THE BIAS FORCE TO THE SYSTEM
-GAD_force = getGADESBiasForce(system.getNumParticles())
+GAD_force = createGADESBiasForce(system.getNumParticles())
 system.addForce(GAD_force)
 
 # SET UP THE SIMULATION OBJECT
@@ -67,11 +67,14 @@ simulation.reporters.append(app.StateDataReporter(stdout, 100, step=True,
                                                   elapsedTime=True, 
                                                   potentialEnergy=True))
 
+backend = OpenMMBackend(simulation)
+
 # SET UP THE BIASING
 if BIASED:
     simulation.reporters.append(
         GADESForceUpdater(
-            biased_force=GAD_force, 
+            backend=backend,
+            biased_force=GAD_force,
             bias_atom_indices=biasing_atom_ids,
             hess_func=hessian, 
             clamp_magnitude=CLAMP_MAGNITUDE,

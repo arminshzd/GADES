@@ -1,13 +1,7 @@
 # ---------------------------------MODULE IMPORTS-------------------------------
-import sys
-import os
-
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, os.path.join(repo_root, 'GADES'))
-
-from utils import compute_hessian_force_fd_richardson as hessian
-from gades import getGADESBiasForce
-from gades import GADESForceUpdater
+from GADES.utils import compute_hessian_force_fd_richardson as hessian
+from GADES import createGADESBiasForce, GADESForceUpdater
+from GADES.backend import OpenMMBackend
 
 # -----------------------------SIMULATION PARAMETERS----------------------------
 NSTEPS = 5e6
@@ -50,7 +44,7 @@ system = top.createSystem(nonbondedMethod=app.PME, nonbondedCutoff=1.0*unit.nano
 # DEFINE INTEGRATOR
 integrator = LangevinIntegrator(300 * unit.kelvin, 1 / unit.picosecond, 2 * unit.femtoseconds)
 # ADD THE BIAS FORCE TO THE SYSTEM
-GAD_force = getGADESBiasForce(system.getNumParticles())
+GAD_force = createGADESBiasForce(system.getNumParticles())
 system.addForce(GAD_force)
 
 # SET UP THE SIMULATION OBJECT

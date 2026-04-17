@@ -1,1 +1,12 @@
 /DMFF/
+
+# Build outputs
+docs/site/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# macOS
+.DS_Store

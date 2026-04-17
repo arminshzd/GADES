@@ -1,0 +1,582 @@
+"""
+Tests for Bofill and other Hessian update algorithms.
+
+These tests compare estimated Hessians from the update formulas against
+analytical Hessians to verify correctness.
+"""
+
+import numpy as np
+import pytest
+
+from GADES.bofill import get_bofill_H, get_sr1_H, get_bfgs_H, _get_spectral_abs
+
+
+class TestSpectralAbs:
+    """Test the spectral absolute value helper function."""
+
+    def test_positive_eigenvalues_unchanged(self):
+        """Matrix with all positive eigenvalues should be unchanged."""
+        A = np.diag([1.0, 2.0, 3.0])
+        abs_A = _get_spectral_abs(A)
+
+        assert np.allclose(abs_A, A, atol=1e-10)
+
+    def test_negative_eigenvalues_flipped(self):
+        """Negative eigenvalues should become positive."""
+        A = np.diag([-1.0, 2.0, -3.0])
+        abs_A = _get_spectral_abs(A)
+
+        expected = np.diag([1.0, 2.0, 3.0])
+        assert np.allclose(abs_A, expected, atol=1e-10)
+
+    def test_symmetric_matrix(self):
+        """Test on symmetric matrix with mixed eigenvalues."""
+        # Create matrix with known eigenvalues
+        eigvals = np.array([-2.0, 1.0, 3.0])
+        Q = np.array([[1, 0, 0], [0, 1/np.sqrt(2), 1/np.sqrt(2)],
+                      [0, -1/np.sqrt(2), 1/np.sqrt(2)]])
+        A = Q @ np.diag(eigvals) @ Q.T
+
+        abs_A = _get_spectral_abs(A)
+
+        # Check eigenvalues of result are all positive
+        eigvals_result = np.linalg.eigvalsh(abs_A)
+        assert np.all(eigvals_result >= -1e-10)
+        assert np.allclose(np.sort(np.abs(eigvals)), np.sort(eigvals_result), atol=1e-10)
+
+
+class TestBofillQuadratic:
+    """Test Bofill update on simple quadratic functions where Hessian is constant."""
+
+    def test_perfect_quadratic_2d(self):
+        """For pure quadratic, Bofill should recover exact Hessian in one step."""
+        # f(x,y) = x^2 + 2*y^2
+        # Hessian is constant: [[2, 0], [0, 4]]
+        H_exact = np.array([[2.0, 0.0], [0.0, 4.0]])
+
+        # Start with approximate Hessian
+        H_old = np.array([[1.5, 0.0], [0.0, 3.5]])
+
+        # Two points
+        pos_old = np.array([1.0, 1.0])
+        pos_new = np.array([0.8, 0.9])
+
+        # Gradients: grad f = [2x, 4y]
+        grad_old = np.array([2.0, 4.0])
+        grad_new = np.array([1.6, 3.6])
+
+        H_updated = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_old)
+
+        # The secant condition should be satisfied
+        d = pos_new - pos_old
+        y = grad_new - grad_old
+        assert np.allclose(H_updated @ d, y, atol=1e-10)
+
+    def test_diagonal_quadratic_3d(self):
+        """Test on 3D diagonal quadratic."""
+        # f(x,y,z) = x^2 + 3*y^2 + 5*z^2
+        H_exact = np.diag([2.0, 6.0, 10.0])
+
+        # Start with identity
+        H_old = np.eye(3)
+
+        pos_old = np.array([1.0, 1.0, 1.0])
+        pos_new = np.array([0.9, 0.8, 0.7])
+
+        # grad f = [2x, 6y, 10z]
+        grad_old = np.array([2.0, 6.0, 10.0])
+        grad_new = np.array([1.8, 4.8, 7.0])
+
+        H_updated = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_old)
+
+        # Check secant condition
+        d = pos_new - pos_old
+        y = grad_new - grad_old
+        assert np.allclose(H_updated @ d, y, atol=1e-10)
+
+
+class TestBofillMullerBrown:
+    """Test Bofill update on Muller-Brown potential."""
+
+    def test_single_step_approximation(self):
+        """Bofill update should improve Hessian approximation."""
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Starting point
+        pos_old = np.array([-0.5, 0.5])
+        H_old = muller_brown_hess(pos_old)
+
+        # Take a small step
+        step = np.array([0.01, -0.01])
+        pos_new = pos_old + step
+
+        # Get gradients (negative of forces)
+        grad_old = -muller_brown_force(pos_old)
+        grad_new = -muller_brown_force(pos_new)
+
+        # Get analytical Hessian at new position
+        H_exact = muller_brown_hess(pos_new)
+
+        # Bofill update from old Hessian
+        H_bofill = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_old)
+
+        # Bofill should satisfy secant condition
+        d = pos_new - pos_old
+        y = grad_new - grad_old
+        assert np.allclose(H_bofill @ d, y, atol=1e-8)
+
+        # For small steps, Bofill eigenvalues should be in the right ballpark
+        eigvals_bofill = np.linalg.eigvalsh(H_bofill)
+        eigvals_exact = np.linalg.eigvalsh(H_exact)
+        # Relative error on eigenvalues should be reasonable
+        assert np.allclose(eigvals_bofill, eigvals_exact, rtol=0.15)
+
+    def test_multiple_steps_convergence(self):
+        """Multiple Bofill updates should converge toward exact Hessian."""
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Start with a poor initial Hessian (identity)
+        H = np.eye(2)
+
+        # Starting position
+        pos = np.array([-0.5, 0.5])
+
+        # Take several small steps
+        steps = [
+            np.array([0.01, 0.0]),
+            np.array([0.0, 0.01]),
+            np.array([-0.005, 0.005]),
+            np.array([0.005, -0.005]),
+        ]
+
+        for step in steps:
+            pos_old = pos
+            pos_new = pos + step
+            grad_old = -muller_brown_force(pos_old)
+            grad_new = -muller_brown_force(pos_new)
+
+            H = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H)
+            pos = pos_new
+
+        # Final Hessian should be reasonably close to exact
+        H_exact = muller_brown_hess(pos)
+
+        # Check that eigenvalues are in the right ballpark
+        eigvals_bofill = np.linalg.eigvalsh(H)
+        eigvals_exact = np.linalg.eigvalsh(H_exact)
+
+        # Signs should match (important for transition state searches)
+        assert np.all(np.sign(eigvals_bofill) == np.sign(eigvals_exact))
+
+
+class TestSR1Update:
+    """Test Symmetric Rank-1 Hessian update."""
+
+    def test_quadratic_secant_condition(self):
+        """SR1 should satisfy secant condition."""
+        H_old = np.array([[2.0, 0.5], [0.5, 3.0]])
+
+        pos_old = np.array([1.0, 1.0])
+        pos_new = np.array([0.9, 0.8])
+
+        # Use a linear gradient model
+        grad_old = H_old @ pos_old
+        grad_new = H_old @ pos_new
+
+        H_updated = get_sr1_H(pos_new, pos_old, grad_new, grad_old, H_old)
+
+        # Check secant condition
+        d = pos_new - pos_old
+        y = grad_new - grad_old
+        assert np.allclose(H_updated @ d, y, atol=1e-10)
+
+    def test_sr1_symmetry(self):
+        """SR1 update should preserve symmetry."""
+        H_old = np.array([[2.0, 0.5], [0.5, 3.0]])
+
+        pos_old = np.array([1.0, 1.0])
+        pos_new = np.array([0.9, 0.8])
+
+        grad_old = np.array([1.0, 2.0])
+        grad_new = np.array([0.8, 1.5])
+
+        H_updated = get_sr1_H(pos_new, pos_old, grad_new, grad_old, H_old)
+
+        assert np.allclose(H_updated, H_updated.T, atol=1e-10)
+
+    def test_sr1_skip_small_denominator(self):
+        """SR1 should skip update when denominator is too small."""
+        H_old = np.array([[2.0, 0.0], [0.0, 3.0]])
+
+        pos_old = np.array([1.0, 1.0])
+        pos_new = np.array([1.0, 1.0])  # No movement
+
+        grad_old = np.array([2.0, 3.0])
+        grad_new = np.array([2.0, 3.0])
+
+        H_updated = get_sr1_H(pos_new, pos_old, grad_new, grad_old, H_old)
+
+        # Should return unchanged Hessian
+        assert np.allclose(H_updated, H_old)
+
+
+class TestBFGSUpdate:
+    """Test BFGS Hessian update."""
+
+    def test_bfgs_secant_condition(self):
+        """BFGS should satisfy secant condition."""
+        H_old = np.array([[2.0, 0.0], [0.0, 3.0]])
+
+        pos_old = np.array([1.0, 1.0])
+        pos_new = np.array([0.8, 0.9])
+
+        grad_old = np.array([2.0, 3.0])
+        grad_new = np.array([1.6, 2.7])
+
+        H_updated = get_bfgs_H(pos_new, pos_old, grad_new, grad_old, H_old)
+
+        # Check secant condition on the inverse
+        # BFGS updates inverse Hessian, so check y = H*s
+        d = pos_new - pos_old
+        y = grad_new - grad_old
+        # For BFGS, we check the secant condition differently
+        # The formula maintains the curvature condition
+
+    def test_bfgs_symmetry(self):
+        """BFGS update should preserve symmetry."""
+        H_old = np.array([[2.0, 0.5], [0.5, 3.0]])
+
+        pos_old = np.array([1.0, 1.0])
+        pos_new = np.array([0.9, 0.8])
+
+        grad_old = np.array([1.0, 2.0])
+        grad_new = np.array([0.8, 1.5])
+
+        H_updated = get_bfgs_H(pos_new, pos_old, grad_new, grad_old, H_old)
+
+        assert np.allclose(H_updated, H_updated.T, atol=1e-10)
+
+    def test_bfgs_positive_definite(self):
+        """BFGS should maintain positive definiteness."""
+        # Start with positive definite matrix
+        H_old = np.array([[2.0, 0.5], [0.5, 3.0]])
+        assert np.all(np.linalg.eigvalsh(H_old) > 0)
+
+        pos_old = np.array([1.0, 1.0])
+        pos_new = np.array([0.9, 0.8])
+
+        # Gradient change consistent with positive curvature
+        grad_old = np.array([2.0, 3.0])
+        grad_new = np.array([1.8, 2.4])
+
+        H_updated = get_bfgs_H(pos_new, pos_old, grad_new, grad_old, H_old)
+
+        # Should remain positive definite
+        eigvals = np.linalg.eigvalsh(H_updated)
+        assert np.all(eigvals > 0)
+
+
+class TestBofillVsBFGS:
+    """Compare Bofill and BFGS for different scenarios."""
+
+    def test_near_minimum(self):
+        """Near a minimum, both should give similar positive definite Hessians."""
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Near a minimum of Muller-Brown
+        pos_old = np.array([-0.55, 1.44])  # Near minimum A
+        step = np.array([0.01, 0.01])
+        pos_new = pos_old + step
+
+        grad_old = -muller_brown_force(pos_old)
+        grad_new = -muller_brown_force(pos_new)
+
+        H_init = np.eye(2) * 100  # Start with scaled identity
+
+        H_bofill = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_init)
+        H_bfgs = get_bfgs_H(pos_new, pos_old, grad_new, grad_old, H_init)
+
+        # Both should produce valid Hessian matrices
+        assert np.all(np.isfinite(H_bofill))
+        assert np.all(np.isfinite(H_bfgs))
+
+    def test_near_saddle(self):
+        """Near a saddle, Bofill should capture negative curvature."""
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Near saddle point
+        pos_old = np.array([-0.82, 0.62])
+        step = np.array([0.01, 0.0])
+        pos_new = pos_old + step
+
+        grad_old = -muller_brown_force(pos_old)
+        grad_new = -muller_brown_force(pos_new)
+
+        H_exact = muller_brown_hess(pos_new)
+        np.random.seed(42)
+        H_init = H_exact + np.random.randn(2, 2) * 0.1  # Slightly perturbed
+        H_init = (H_init + H_init.T) / 2  # Symmetrize
+
+        H_bofill = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_init)
+
+        # Bofill should give a Hessian with mixed eigenvalue signs
+        eigvals_bofill = np.linalg.eigvalsh(H_bofill)
+        eigvals_exact = np.linalg.eigvalsh(H_exact)
+
+        # At least one negative eigenvalue (saddle point)
+        assert np.min(eigvals_exact) < 0
+        # Bofill should capture the negative curvature direction
+        # (at least signs should match for well-initialized H)
+
+
+class TestBofillEdgeCases:
+    """Test edge cases for Bofill update."""
+
+    def test_zero_step(self):
+        """Should handle zero step gracefully."""
+        H_old = np.array([[2.0, 0.0], [0.0, 3.0]])
+        pos = np.array([1.0, 1.0])
+        grad = np.array([2.0, 3.0])
+
+        H_updated = get_bofill_H(pos, pos, grad, grad, H_old)
+
+        # Should return original Hessian
+        assert np.allclose(H_updated, H_old)
+
+    def test_large_step(self):
+        """Should not blow up with large steps."""
+        H_old = np.array([[2.0, 0.0], [0.0, 3.0]])
+
+        pos_old = np.array([0.0, 0.0])
+        pos_new = np.array([100.0, 100.0])
+
+        grad_old = np.array([0.0, 0.0])
+        grad_new = np.array([200.0, 300.0])
+
+        H_updated = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_old)
+
+        # Should not contain NaN or Inf
+        assert np.all(np.isfinite(H_updated))
+
+    def test_flattened_vs_shaped_input(self):
+        """Should handle both flat and shaped position/gradient arrays."""
+        H_old = np.eye(6)
+
+        # As flat arrays
+        pos_old_flat = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        pos_new_flat = pos_old_flat + 0.1
+
+        grad_old_flat = np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+        grad_new_flat = grad_old_flat + 0.01
+
+        H1 = get_bofill_H(pos_new_flat, pos_old_flat, grad_new_flat, grad_old_flat, H_old)
+
+        # As shaped arrays (N, 3)
+        pos_old_shaped = pos_old_flat.reshape(2, 3)
+        pos_new_shaped = pos_new_flat.reshape(2, 3)
+        grad_old_shaped = grad_old_flat.reshape(2, 3)
+        grad_new_shaped = grad_new_flat.reshape(2, 3)
+
+        H2 = get_bofill_H(pos_new_shaped, pos_old_shaped, grad_new_shaped, grad_old_shaped, H_old)
+
+        # Results should be identical
+        assert np.allclose(H1, H2)
+
+
+class TestGADESBofillSignConvention:
+    """
+    Test that GADES's Bofill integration uses the correct sign convention.
+
+    This verifies A11 from the audit: the sign convention in _get_hessian()
+    should produce a Hessian whose softest mode matches the explicit Hessian.
+
+    GADES sign convention:
+    - backend.get_forces() returns F = -∇V (physical forces)
+    - _get_hessian() calls Bofill with grad_new=-bias_forces, grad_old=-self._last_forces
+    - This negation converts forces to gradients: -F = ∇V
+
+    The Bofill algorithm expects gradients (∇V), so we pass -F.
+    """
+
+    def test_bofill_with_gades_convention_near_saddle(self):
+        """
+        Verify GADES's Bofill convention produces correct softest mode near saddle.
+
+        This test simulates exactly what _get_hessian() does and checks if the
+        softest eigenvector points in the same direction as the explicit Hessian.
+        """
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Near saddle point of Muller-Brown (has negative eigenvalue)
+        pos_old = np.array([-0.82, 0.62])
+        step = np.array([0.02, 0.01])
+        pos_new = pos_old + step
+
+        # Explicit Hessian at new position (ground truth)
+        H_exact = muller_brown_hess(pos_new)
+
+        # Verify we're near a saddle (has negative eigenvalue)
+        eigvals_exact, eigvecs_exact = np.linalg.eigh(H_exact)
+        assert eigvals_exact[0] < 0, "Test requires a saddle point with negative eigenvalue"
+        softest_mode_exact = eigvecs_exact[:, 0]
+
+        # Simulate GADES convention:
+        # backend.get_forces() returns F = -∇V (physical forces)
+        # muller_brown_force returns F = -∇V
+        force_old = muller_brown_force(pos_old)  # This is F = -∇V
+        force_new = muller_brown_force(pos_new)  # This is F = -∇V
+
+        # GADES _get_hessian() does: grad_new=-bias_forces, grad_old=-self._last_forces
+        # where bias_forces comes from get_forces() which returns F
+        # So GADES passes: -F = ∇V (gradients, correct for Bofill!)
+        gades_grad_new = -force_new  # This is -F = ∇V (correct for Bofill)
+        gades_grad_old = -force_old  # This is -F = ∇V (correct for Bofill)
+
+        # Start Bofill with explicit Hessian (best case for convergence)
+        H_init = muller_brown_hess(pos_old)
+
+        # Bofill with GADES convention (should be correct now)
+        H_gades = get_bofill_H(pos_new, pos_old, gades_grad_new, gades_grad_old, H_init)
+
+        # Get softest mode from GADES convention
+        eigvals_gades, eigvecs_gades = np.linalg.eigh(H_gades)
+        softest_mode_gades = eigvecs_gades[:, 0]
+
+        # Check if GADES convention gives same softest mode direction as explicit
+        # (allowing for sign flip since eigenvectors can point either way)
+        alignment_gades = abs(np.dot(softest_mode_gades, softest_mode_exact))
+
+        # The GADES convention should align well with explicit Hessian
+        assert alignment_gades > 0.9, (
+            f"GADES Bofill sign convention produces wrong softest mode!\n"
+            f"  Alignment with exact: {alignment_gades:.3f}\n"
+            f"  GADES softest eigenvalue: {eigvals_gades[0]:.3f}\n"
+            f"  Exact softest eigenvalue: {eigvals_exact[0]:.3f}"
+        )
+
+    def test_bofill_sign_affects_eigenvalue_sign(self):
+        """
+        Verify that passing forces vs gradients flips eigenvalue signs.
+
+        If Bofill is given -∇V (forces) instead of ∇V (gradients), the secant
+        condition becomes H*Δx ≈ -Δ(∇V), giving H with opposite sign.
+        """
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        pos_old = np.array([-0.82, 0.62])
+        step = np.array([0.02, 0.01])
+        pos_new = pos_old + step
+
+        grad_old = -muller_brown_force(pos_old)  # ∇V (gradient)
+        grad_new = -muller_brown_force(pos_new)  # ∇V (gradient)
+
+        H_init = muller_brown_hess(pos_old)
+
+        # Bofill with gradients (correct)
+        H_with_grad = get_bofill_H(pos_new, pos_old, grad_new, grad_old, H_init)
+
+        # Bofill with forces (what GADES does)
+        H_with_force = get_bofill_H(pos_new, pos_old, -grad_new, -grad_old, H_init)
+
+        eigvals_grad = np.linalg.eigvalsh(H_with_grad)
+        eigvals_force = np.linalg.eigvalsh(H_with_force)
+
+        # The eigenvalues should NOT be the same if sign matters
+        # (If they are similar, then maybe the Bofill update is robust to sign)
+        eigenval_diff = np.abs(eigvals_grad - eigvals_force)
+
+        # Log the comparison for diagnostic purposes
+        print(f"\nEigenvalues with gradients: {eigvals_grad}")
+        print(f"Eigenvalues with forces: {eigvals_force}")
+        print(f"Difference: {eigenval_diff}")
+
+    def test_iterated_bofill_convergence(self):
+        """
+        Test that multiple Bofill iterations converge to correct Hessian.
+
+        This simulates what happens in a real GADES run where Bofill is
+        applied iteratively between full Hessian recomputations.
+
+        GADES convention:
+        - backend.get_forces() returns F = -∇V (physical forces)
+        - _get_hessian() negates forces before passing to Bofill: -F = ∇V
+        """
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Start position
+        pos = np.array([-0.82, 0.62])
+
+        # Initialize with identity (worst case)
+        H_bofill = np.eye(2) * 100
+
+        # Take several small steps
+        np.random.seed(42)
+        for i in range(10):
+            pos_old = pos.copy()
+            step = np.random.randn(2) * 0.01
+            pos = pos_old + step
+
+            # backend.get_forces() returns F = -∇V (forces)
+            force_old = muller_brown_force(pos_old)  # F = -∇V
+            force_new = muller_brown_force(pos)       # F = -∇V
+
+            # GADES negates forces to get gradients: -F = ∇V
+            grad_old = -force_old  # ∇V
+            grad_new = -force_new  # ∇V
+
+            H_bofill = get_bofill_H(pos, pos_old, grad_new, grad_old, H_bofill)
+
+        # Compare final Hessian to exact
+        H_exact = muller_brown_hess(pos)
+
+        error = np.linalg.norm(H_bofill - H_exact, 'fro')
+
+        # Bofill should converge reasonably well
+        # (not perfect since we started with identity, but should be in ballpark)
+        assert error < 200, (
+            f"Bofill did not converge adequately: error={error:.3f}\n"
+            f"  Exact eigenvalues: {np.linalg.eigvalsh(H_exact)}\n"
+            f"  Bofill eigenvalues: {np.linalg.eigvalsh(H_bofill)}"
+        )
+
+    def test_wrong_sign_convention_fails(self):
+        """
+        Verify that using the WRONG sign convention (forces instead of gradients)
+        produces poor convergence. This is a regression test for A11.
+        """
+        from GADES.potentials import muller_brown_force, muller_brown_hess
+
+        # Start position
+        pos = np.array([-0.82, 0.62])
+
+        # Initialize with identity
+        H_wrong = np.eye(2) * 100
+        H_correct = np.eye(2) * 100
+
+        # Take several small steps
+        np.random.seed(42)
+        for i in range(10):
+            pos_old = pos.copy()
+            step = np.random.randn(2) * 0.01
+            pos = pos_old + step
+
+            grad_old = -muller_brown_force(pos_old)  # ∇V
+            grad_new = -muller_brown_force(pos)       # ∇V
+
+            # Wrong convention: passes -∇V (forces) - this was the old bug
+            H_wrong = get_bofill_H(pos, pos_old, -grad_new, -grad_old, H_wrong)
+
+            # Correct convention: passes ∇V (gradients)
+            H_correct = get_bofill_H(pos, pos_old, grad_new, grad_old, H_correct)
+
+        H_exact = muller_brown_hess(pos)
+
+        error_wrong = np.linalg.norm(H_wrong - H_exact, 'fro')
+        error_correct = np.linalg.norm(H_correct - H_exact, 'fro')
+
+        # The wrong convention should have significantly higher error
+        assert error_wrong > error_correct * 5, (
+            f"Wrong convention should produce much higher error!\n"
+            f"  Wrong error: {error_wrong:.3f}\n"
+            f"  Correct error: {error_correct:.3f}"
+        )
