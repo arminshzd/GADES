@@ -280,11 +280,15 @@ class GADESBias:
         self._evec_log = None
         self._eval_log = None
         self._xyz_log = None
+        self._epot_log = None
+        self._forces_log = None
+        self._hess_log = None
+        self._pos_log = None
 
         if logfile_prefix is not None:
             # register with atexit for safe handling of log files
             atexit.register(self._close_logs)
-            
+
             self._evec_log = open(f"{logfile_prefix}_evec.log", "w")
             self._evec_log.write("# Softest-mode eigenvector at each step (one per line)\n")
             self._evec_log.write("# Columns: step, eigenvector components (flattened)\n")
@@ -299,6 +303,26 @@ class GADESBias:
             self._xyz_log.write("# Each frame follows XYZ format: N_atoms, comment, atom lines\n")
             self._xyz_log.write("# Coordinates are in nanometers; atoms are labeled 'C' by default\n")
             self._xyz_log.flush()
+
+            self._epot_log = open(f"{logfile_prefix}_epot.log", "w")
+            self._epot_log.write("# Unbiased potential energy at each bias step\n")
+            self._epot_log.write("# Columns: step, potential energy (kJ/mol for OpenMM; eV for ASE)\n")
+            self._epot_log.flush()
+
+            self._forces_log = open(f"{logfile_prefix}_forces.log", "w")
+            self._forces_log.write("# Unbiased forces on biased atoms at each bias step\n")
+            self._forces_log.write("# Columns: step, force components (flattened, biased atoms only)\n")
+            self._forces_log.flush()
+
+            self._hess_log = open(f"{logfile_prefix}_hess.log", "w")
+            self._hess_log.write("# Hessian of the biased-atom subspace at each bias step\n")
+            self._hess_log.write("# Columns: step, Hessian elements (row-major); unavailable for lanczos_hvp\n")
+            self._hess_log.flush()
+
+            self._pos_log = open(f"{logfile_prefix}_pos.log", "w")
+            self._pos_log.write("# Positions of biased atoms at each bias step\n")
+            self._pos_log.write("# Columns: step, position components (flattened, biased atoms only)\n")
+            self._pos_log.flush()
 
             # Warn if eigenvalue logging is unavailable with lanczos_hvp
             if eigensolver == 'lanczos_hvp':
@@ -602,16 +626,24 @@ class GADESBias:
         forces_b = fclamp(forces_b, self.clamp_magnitude)
 
         # Logging (compute full spectrum only if logging is enabled and Hessian available)
-        if self._eval_log is not None and hess is not None:
-            w, v = np.linalg.eigh(hess)
-            w_sorted = w.argsort()
-            self._logging(n, w, w_sorted, positions)
-        else:
-            self._logging(n, None, None, positions)
+        needs_logging = any(
+            f is not None for f in (
+                self._evec_log, self._eval_log, self._xyz_log,
+                self._epot_log, self._forces_log, self._hess_log, self._pos_log,
+            )
+        )
+        if needs_logging:
+            energy = self.backend.get_energy() if self._epot_log is not None else None
+            if self._eval_log is not None and hess is not None:
+                w, v = np.linalg.eigh(hess)
+                w_sorted = w.argsort()
+                self._logging(n, w, w_sorted, positions, forces_u, hess, energy)
+            else:
+                self._logging(n, None, None, positions, forces_u, hess, energy)
 
         return forces_b.reshape(forces_u.shape)
 
-    def _logging(self, n, w, w_sorted, positions) -> None:
+    def _logging(self, n, w, w_sorted, positions, forces_u=None, hess=None, energy=None) -> None:
         self._ensure_atom_symbols()
         step = self.backend.get_currentStep()
 
@@ -629,6 +661,19 @@ class GADESBias:
                 x, y, z = coord
                 self._xyz_log.write(f"{symbol} {x:.6f} {y:.6f} {z:.6f}\n")
             self._xyz_log.flush()
+        if self._epot_log is not None and energy is not None:
+            self._epot_log.write(f"{step} {energy}\n")
+            self._epot_log.flush()
+        if self._forces_log is not None and forces_u is not None:
+            self._forces_log.write(f"{step} " + " ".join(map(str, forces_u.flatten())) + "\n")
+            self._forces_log.flush()
+        if self._hess_log is not None and hess is not None:
+            self._hess_log.write(f"{step} " + " ".join(map(str, hess.flatten())) + "\n")
+            self._hess_log.flush()
+        if self._pos_log is not None:
+            pos_biased = positions[self.bias_atom_indices, :]
+            self._pos_log.write(f"{step} " + " ".join(map(str, pos_biased.flatten())) + "\n")
+            self._pos_log.flush()
 
     def remove_bias(self) -> None:
         """
@@ -740,6 +785,10 @@ class GADESBias:
             - `self._evec_log`: eigenvector log file (`<prefix>_evec.log`)
             - `self._eval_log`: eigenvalue log file (`<prefix>_eval.log`)
             - `self._xyz_log`: biased atom trajectory log file (`<prefix>_biased_atoms.xyz`)
+            - `self._epot_log`: potential energy log file (`<prefix>_epot.log`)
+            - `self._forces_log`: unbiased forces log file (`<prefix>_forces.log`)
+            - `self._hess_log`: Hessian log file (`<prefix>_hess.log`)
+            - `self._pos_log`: biased-atom positions log file (`<prefix>_pos.log`)
 
         Notes:
             - Each file handle is checked for existence and open state before closing.
@@ -749,7 +798,7 @@ class GADESBias:
         Returns:
             None
         """
-        for attr in ("_evec_log", "_eval_log", "_xyz_log"):
+        for attr in ("_evec_log", "_eval_log", "_xyz_log", "_epot_log", "_forces_log", "_hess_log", "_pos_log"):
             f = getattr(self, attr, None)
             if f is not None and not f.closed:
                 try:

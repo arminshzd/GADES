@@ -99,8 +99,16 @@ To use GADES with ASE:
         interval=BIAS_UPDATE_FREQ,
         stability_interval=STABILITY_CHECK_FREQ,
         logfile_prefix=LOG_PREFIX,
+        target_temperature=300.0,  # Kelvin — always set this explicitly
     )
     ```
+
+    > **Important:** Always pass `target_temperature` (in Kelvin) to `ASEBackend`.
+    > Without it, GADES tries to infer the temperature from the integrator object,
+    > but ASE integrators store temperature under different attribute names and in
+    > different units depending on the integrator type. This auto-detection can
+    > silently fail or return the wrong value for integrators such as
+    > `NoseHooverChain`. Setting `target_temperature` explicitly avoids all of this.
 
 4) Create a time integrator and attach it to the backend:
 

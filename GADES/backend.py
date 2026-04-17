@@ -100,6 +100,16 @@ class Backend:
         """
         raise NotImplementedError
 
+    def get_energy(self) -> float:
+        """
+        Return the potential energy of the system at the current positions.
+
+        Returns:
+            float: Potential energy in backend-native units
+                (kJ/mol for OpenMM, eV for ASE).
+        """
+        raise NotImplementedError
+
     def apply_bias(
         self,
         bias_force_object: Any,
@@ -335,6 +345,13 @@ class OpenMMBackend(Backend):
 
         return forces.flatten()
 
+    def get_energy(self) -> float:
+        """Return the unbiased potential energy (force group 0) in kJ/mol."""
+        state = self.simulation.context.getState(getEnergy=True, groups={0})
+        return state.getPotentialEnergy().value_in_unit(
+            openmm.unit.kilojoule_per_mole)
+
+
     def apply_bias(
         self,
         bias_force_object: "openmm.CustomExternalForce",  # type: ignore[name-defined]
@@ -471,11 +488,13 @@ def _get_openMM_forces(
 try:
     from ase.calculators.calculator import Calculator as _Calculator, all_changes as _all_changes
     from ase import Atoms as _Atoms
+    from ase import units as _ase_units
     _ASE_AVAILABLE = True
 except ImportError:
     _ASE_AVAILABLE = False
     _Calculator = object  # type: ignore[misc, assignment]
     _all_changes = []  # type: ignore[assignment]
+    _ase_units = None  # type: ignore[assignment]
     _Atoms = None  # type: ignore[misc, assignment]
 
 
@@ -558,9 +577,12 @@ class ASEBackend(Backend):
             GADES bias forces.
         atoms: The ASE Atoms object.
         target_temperature: Target temperature in Kelvin for stability checking.
-            If not provided, the backend will attempt to read it from the integrator
-            (works for Langevin, NVTBerendsen, NPTBerendsen). If neither is available,
-            stability checking will be skipped with a warning.
+            **It is strongly recommended to set this explicitly.** If not provided,
+            the backend will attempt to read it from the integrator (works for
+            ``Langevin``, ``NVTBerendsen``, ``NPTBerendsen``), but this is fragile
+            because ASE integrators use different attribute names and units internally.
+            If no temperature can be determined, stability checking will be skipped
+            with a warning.
 
     Raises:
         ImportError: If ASE is not installed.
@@ -671,15 +693,33 @@ class ASEBackend(Backend):
 
         return forces.flatten()
 
+    def get_energy(self) -> float:
+        """Return the unbiased potential energy in eV (from the base calculator)."""
+        if 'energy' not in self.base_calc.results:
+            self.base_calc.calculate(
+                atoms=self.atoms, properties=['energy'], system_changes=_all_changes)
+        return float(self.base_calc.results['energy'])
+
     def _get_target_temperature(self) -> Optional[float]:
         """
         Get the target temperature for stability checking.
 
         Returns the target temperature in Kelvin, trying in order:
 
-        1. ``self.target_temperature`` if set explicitly
-        2. Integrator's temperature attribute (for NVT/NPT integrators)
-        3. ``None`` if neither is available
+        1. ``self.target_temperature`` if set explicitly (recommended)
+        2. ``integrator.temp`` — ASE ``Langevin`` stores this in **eV**
+           (``units.kB * temperature_K``), so it is converted to Kelvin by
+           dividing by ``units.kB``.
+        3. ``integrator.temperature`` — ``NVTBerendsen`` and ``NPTBerendsen``
+           store this in **Kelvin** and is returned directly.
+        4. ``None`` if none of the above are available.
+
+        .. warning::
+            Auto-detection via the integrator attribute is fragile: different
+            ASE integrators use different attribute names and units, and some
+            (e.g. ``NoseHooverChain``) expose neither.  **Always set
+            ``target_temperature`` explicitly in the** ``ASEBackend``
+            **constructor** to guarantee correct stability checks.
 
         Returns:
             Target temperature in Kelvin, or ``None`` if unavailable.
@@ -690,10 +730,10 @@ class ASEBackend(Backend):
 
         # Try to get from integrator
         if self.integrator is not None:
-            # ASE Langevin integrator stores temperature in 'temp' attribute (in Kelvin)
+            # ASE Langevin stores self.temp in eV (= units.kB * temperature_K)
             if hasattr(self.integrator, 'temp'):
-                return self.integrator.temp
-            # NVTBerendsen and NPTBerendsen store it in 'temperature'
+                return self.integrator.temp / _ase_units.kB
+            # NVTBerendsen and NPTBerendsen store temperature in Kelvin
             if hasattr(self.integrator, 'temperature'):
                 return self.integrator.temperature
 
@@ -811,6 +851,9 @@ class ASEBackend(Backend):
             full_hessian_interval: Steps between full Hessian recomputation (if using Bofill).
             hvp_epsilon: Finite difference step size for HVP (if using 'lanczos_hvp').
             target_temperature: Target temperature in Kelvin for stability checking.
+                **It is strongly recommended to set this explicitly** rather than
+                relying on auto-detection from the integrator, which is fragile
+                across different ASE integrator types.
 
         Returns:
             Fully configured ASEBackend with ``gades_bias`` attribute accessible.

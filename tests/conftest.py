@@ -42,6 +42,9 @@ class MockBackend:
         # Return forces (F = -∇V) as flattened array
         return self._forces.flatten()
 
+    def get_energy(self):
+        return 0.0
+
     def apply_bias(self, bias_force_object, biased_force_values, bias_atom_indices):
         # Store for verification in tests
         self._last_applied_bias = biased_force_values
