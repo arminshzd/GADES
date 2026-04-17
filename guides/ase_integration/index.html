@@ -1,0 +1,1250 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://arminshzd.github.io/GADES/guides/ase_integration/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../large_systems/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../imgs/GADES_favicon_b.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>ASE Integration - GADES</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#ase-integration-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="GADES" class="md-header__button md-logo" aria-label="GADES" data-md-component="logo">
+      
+  <img src="../../imgs/GADES_favicon_b.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            GADES
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              ASE Integration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/arminshzd/GADES" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="GADES" class="md-nav__button md-logo" aria-label="GADES" data-md-component="logo">
+      
+  <img src="../../imgs/GADES_favicon_b.png" alt="logo">
+
+    </a>
+    GADES
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/arminshzd/GADES" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ASE Integration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ASE Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-circular-dependency-problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Circular Dependency Problem
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The Circular Dependency Problem">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-does-it-exist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why Does It Exist?
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-old-4-step-workaround" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Old 4-Step Workaround
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-solution-factory-method-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Solution: Factory Method Pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#avoiding-circular-imports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Avoiding Circular Imports
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced Usage
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Advanced Usage">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#accessing-gadesbias-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accessing GADESBias Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#using-optional-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Optional Features
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-initialization-legacy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual Initialization (Legacy)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-with-openmm-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison with OpenMM Backend
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../large_systems/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Large Systems
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../examples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/MB_pot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Müller-Brown
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/AIB9/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AIB9
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/sulf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sulfadiazine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/GADES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GADES
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="ase-integration-guide">ASE Integration Guide</h1>
+<p>This guide explains how to use GADES with the Atomic Simulation Environment (ASE) and covers the architecture decisions behind the integration.</p>
+<h2 id="quick-start">Quick Start</h2>
+<p>The simplest way to use GADES with ASE is via the <code>with_gades</code> factory method:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">ase</span><span class="w"> </span><span class="kn">import</span> <span class="n">Atoms</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.calculators.lammpsrun</span><span class="w"> </span><span class="kn">import</span> <span class="n">LAMMPS</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ase.md.verlet</span><span class="w"> </span><span class="kn">import</span> <span class="n">VelocityVerlet</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">GADES.backend</span><span class="w"> </span><span class="kn">import</span> <span class="n">ASEBackend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">GADES.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_hessian_force_fd_richardson</span> <span class="k">as</span> <span class="n">hessian</span>
+
+<span class="c1"># Set up your atoms and calculator</span>
+<span class="n">atoms</span> <span class="o">=</span> <span class="n">bulk</span><span class="p">(</span><span class="s1">&#39;Ar&#39;</span><span class="p">,</span> <span class="s1">&#39;fcc&#39;</span><span class="p">,</span> <span class="n">a</span><span class="o">=</span><span class="mf">5.26</span><span class="p">)</span><span class="o">.</span><span class="n">repeat</span><span class="p">((</span><span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+<span class="n">lammps_calc</span> <span class="o">=</span> <span class="n">LAMMPS</span><span class="p">(</span><span class="o">**</span><span class="n">parameters</span><span class="p">)</span>
+
+<span class="c1"># Atoms to bias (e.g., all Ar atoms)</span>
+<span class="n">biasing_atom_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">atom</span><span class="o">.</span><span class="n">index</span> <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">atoms</span> <span class="k">if</span> <span class="n">atom</span><span class="o">.</span><span class="n">symbol</span> <span class="o">==</span> <span class="s1">&#39;Ar&#39;</span><span class="p">]</span>
+
+<span class="c1"># Create backend with GADES bias in one step</span>
+<span class="n">backend</span> <span class="o">=</span> <span class="n">ASEBackend</span><span class="o">.</span><span class="n">with_gades</span><span class="p">(</span>
+    <span class="n">atoms</span><span class="o">=</span><span class="n">atoms</span><span class="p">,</span>
+    <span class="n">base_calc</span><span class="o">=</span><span class="n">lammps_calc</span><span class="p">,</span>
+    <span class="n">bias_atom_indices</span><span class="o">=</span><span class="n">biasing_atom_ids</span><span class="p">,</span>
+    <span class="n">hess_func</span><span class="o">=</span><span class="n">hessian</span><span class="p">,</span>
+    <span class="n">clamp_magnitude</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+    <span class="n">kappa</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+    <span class="n">interval</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">stability_interval</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Set up MD and attach integrator</span>
+<span class="n">dyn</span> <span class="o">=</span> <span class="n">VelocityVerlet</span><span class="p">(</span><span class="n">atoms</span><span class="p">,</span> <span class="mi">5</span> <span class="o">*</span> <span class="n">units</span><span class="o">.</span><span class="n">fs</span><span class="p">)</span>
+<span class="n">backend</span><span class="o">.</span><span class="n">integrator</span> <span class="o">=</span> <span class="n">dyn</span>
+
+<span class="c1"># Run simulation</span>
+<span class="n">dyn</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="mi">1000</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="the-circular-dependency-problem">The Circular Dependency Problem</h2>
+<h3 id="why-does-it-exist">Why Does It Exist?</h3>
+<p>The GADES-ASE integration involves three tightly coupled components that have mutual dependencies:</p>
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────────────┐
+│                     Dependency Chain                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  GADESBias ──needs──▶ Backend (to get forces/positions)         │
+│      │                    ▲                                     │
+│      │                    │                                     │
+│      ▼                    │                                     │
+│  GADESCalculator ◀──creates── ASEBackend                        │
+│      │                                                          │
+│      │                                                          │
+│      ▼                                                          │
+│  (wraps base calculator and calls GADESBias.get_gad_force())    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre></div>
+<p><strong>The circular dependency arises because:</strong></p>
+<ol>
+<li><strong>GADESBias</strong> needs a reference to <code>Backend</code> to:</li>
+<li>Query current atomic positions via <code>backend.get_current_state()</code></li>
+<li>Compute forces at perturbed positions via <code>backend.get_forces()</code></li>
+<li>Get atom symbols for logging via <code>backend.get_atom_symbols()</code></li>
+<li>
+<p>Check simulation stability via <code>backend.is_stable()</code></p>
+</li>
+<li>
+<p><strong>GADESCalculator</strong> needs a reference to <code>GADESBias</code> to:</p>
+</li>
+<li>Call <code>gades_bias.get_gad_force()</code> during force computation</li>
+<li>
+<p>Check if bias should be applied via <code>gades_bias.applying_bias()</code></p>
+</li>
+<li>
+<p><strong>ASEBackend</strong> needs a reference to <code>GADESCalculator</code> to:</p>
+</li>
+<li>Access the base calculator for unbiased forces</li>
+<li>Manage the atoms-calculator relationship</li>
+</ol>
+<p>This creates a chicken-and-egg problem: you can't fully initialize any component without the others already existing.</p>
+<h3 id="the-old-4-step-workaround">The Old 4-Step Workaround</h3>
+<p>Before the <code>with_gades</code> factory method, users had to manually wire the components with a post-initialization patch:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">GADES</span><span class="w"> </span><span class="kn">import</span> <span class="n">GADESBias</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">GADES.backend</span><span class="w"> </span><span class="kn">import</span> <span class="n">ASEBackend</span><span class="p">,</span> <span class="n">GADESCalculator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">GADES.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_hessian_force_fd_richardson</span> <span class="k">as</span> <span class="n">hessian</span>
+
+<span class="c1"># Step 1: Create GADESBias with backend=None (incomplete initialization!)</span>
+<span class="n">force_bias</span> <span class="o">=</span> <span class="n">GADESBias</span><span class="p">(</span>
+    <span class="n">backend</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>                    <span class="c1"># ⚠️ Cannot provide backend yet</span>
+    <span class="n">biased_force</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+    <span class="n">bias_atom_indices</span><span class="o">=</span><span class="n">biasing_atom_ids</span><span class="p">,</span>
+    <span class="n">hess_func</span><span class="o">=</span><span class="n">hessian</span><span class="p">,</span>
+    <span class="n">clamp_magnitude</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+    <span class="n">kappa</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+    <span class="n">interval</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">stability_interval</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Step 2: Create GADESCalculator with the GADESBias</span>
+<span class="n">gades_calc</span> <span class="o">=</span> <span class="n">GADESCalculator</span><span class="p">(</span><span class="n">lammps_calc</span><span class="p">,</span> <span class="n">force_bias</span><span class="p">)</span>
+
+<span class="c1"># Step 3: Create ASEBackend with the GADESCalculator</span>
+<span class="n">backend</span> <span class="o">=</span> <span class="n">ASEBackend</span><span class="p">(</span><span class="n">gades_calc</span><span class="p">,</span> <span class="n">atoms</span><span class="p">)</span>
+
+<span class="c1"># Step 4: Patch the backend reference back into GADESBias</span>
+<span class="n">force_bias</span><span class="o">.</span><span class="n">backend</span> <span class="o">=</span> <span class="n">backend</span>         <span class="c1"># ⚠️ Manual post-initialization patching!</span>
+</code></pre></div>
+<p><strong>Problems with this approach:</strong></p>
+<ul>
+<li><strong>Error-prone</strong>: Forgetting step 4 leads to <code>AttributeError</code> or <code>NoneType</code> errors at runtime</li>
+<li><strong>Non-obvious</strong>: New users don't expect to need post-initialization patching</li>
+<li><strong>Violates encapsulation</strong>: Internal wiring details are exposed to users</li>
+<li><strong>Hard to document</strong>: The pattern is unusual and confusing</li>
+</ul>
+<h3 id="the-solution-factory-method-pattern">The Solution: Factory Method Pattern</h3>
+<p>The <code>with_gades</code> factory method encapsulates all the wiring logic:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">GADES.backend</span><span class="w"> </span><span class="kn">import</span> <span class="n">ASEBackend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">GADES.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_hessian_force_fd_richardson</span> <span class="k">as</span> <span class="n">hessian</span>
+
+<span class="c1"># Single step: All wiring handled internally</span>
+<span class="n">backend</span> <span class="o">=</span> <span class="n">ASEBackend</span><span class="o">.</span><span class="n">with_gades</span><span class="p">(</span>
+    <span class="n">atoms</span><span class="o">=</span><span class="n">atoms</span><span class="p">,</span>
+    <span class="n">base_calc</span><span class="o">=</span><span class="n">lammps_calc</span><span class="p">,</span>
+    <span class="n">bias_atom_indices</span><span class="o">=</span><span class="n">biasing_atom_ids</span><span class="p">,</span>
+    <span class="n">hess_func</span><span class="o">=</span><span class="n">hessian</span><span class="p">,</span>
+    <span class="n">clamp_magnitude</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+    <span class="n">kappa</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+    <span class="n">interval</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="n">stability_interval</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Access GADESBias if needed</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Kappa: </span><span class="si">{</span><span class="n">backend</span><span class="o">.</span><span class="n">gades_bias</span><span class="o">.</span><span class="n">kappa</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>How it works internally:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nd">@classmethod</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">with_gades</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">atoms</span><span class="p">,</span> <span class="n">base_calc</span><span class="p">,</span> <span class="n">bias_atom_indices</span><span class="p">,</span> <span class="o">...</span><span class="p">):</span>
+    <span class="c1"># Import here to avoid circular import at module load time</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.gades</span><span class="w"> </span><span class="kn">import</span> <span class="n">GADESBias</span>
+
+    <span class="c1"># Step 1: Create GADESBias with backend=None</span>
+    <span class="n">gades_bias</span> <span class="o">=</span> <span class="n">GADESBias</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">biased_force</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+
+    <span class="c1"># Step 2: Create GADESCalculator</span>
+    <span class="n">gades_calc</span> <span class="o">=</span> <span class="n">GADESCalculator</span><span class="p">(</span><span class="n">base_calc</span><span class="p">,</span> <span class="n">gades_bias</span><span class="p">)</span>
+
+    <span class="c1"># Step 3: Create ASEBackend</span>
+    <span class="n">backend</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span><span class="n">gades_calc</span><span class="p">,</span> <span class="n">atoms</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+
+    <span class="c1"># Step 4: Wire up the circular reference</span>
+    <span class="n">gades_bias</span><span class="o">.</span><span class="n">backend</span> <span class="o">=</span> <span class="n">backend</span>
+
+    <span class="c1"># Step 5: Store reference for user access</span>
+    <span class="n">backend</span><span class="o">.</span><span class="n">gades_bias</span> <span class="o">=</span> <span class="n">gades_bias</span>
+
+    <span class="k">return</span> <span class="n">backend</span>
+</code></pre></div>
+<p><strong>Benefits:</strong></p>
+<ul>
+<li><strong>Single entry point</strong>: One method call creates a fully configured system</li>
+<li><strong>Encapsulated complexity</strong>: Users don't need to understand the internal wiring</li>
+<li><strong>Type-safe</strong>: Proper type hints without circular import issues (uses <code>TYPE_CHECKING</code>)</li>
+<li><strong>Accessible</strong>: The <code>GADESBias</code> instance is available via <code>backend.gades_bias</code> if needed</li>
+</ul>
+<h2 id="avoiding-circular-imports">Avoiding Circular Imports</h2>
+<p>The implementation uses Python's <code>TYPE_CHECKING</code> constant to provide type hints without runtime circular imports:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">TYPE_CHECKING</span>
+
+<span class="k">if</span> <span class="n">TYPE_CHECKING</span><span class="p">:</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">.gades</span><span class="w"> </span><span class="kn">import</span> <span class="n">GADESBias</span>  <span class="c1"># Only imported during type checking</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ASEBackend</span><span class="p">:</span>
+    <span class="n">gades_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="s2">&quot;GADESBias&quot;</span><span class="p">]</span>  <span class="c1"># Forward reference as string</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">with_gades</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">...</span><span class="p">):</span>
+        <span class="c1"># Import at runtime inside the method</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">.gades</span><span class="w"> </span><span class="kn">import</span> <span class="n">GADESBias</span>
+        <span class="o">...</span>
+</code></pre></div>
+<p>This pattern:</p>
+<ol>
+<li><strong>At type-checking time</strong> (e.g., mypy, IDE): The import happens, enabling autocomplete and type validation</li>
+<li><strong>At runtime</strong>: The import is deferred to when <code>with_gades</code> is actually called, avoiding circular import errors</li>
+</ol>
+<h2 id="advanced-usage">Advanced Usage</h2>
+<h3 id="accessing-gadesbias-parameters">Accessing GADESBias Parameters</h3>
+<p>After creating the backend, you can access and modify GADESBias parameters:</p>
+<div class="highlight"><pre><span></span><code><span class="n">backend</span> <span class="o">=</span> <span class="n">ASEBackend</span><span class="o">.</span><span class="n">with_gades</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+
+<span class="c1"># Read parameters</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Current kappa: </span><span class="si">{</span><span class="n">backend</span><span class="o">.</span><span class="n">gades_bias</span><span class="o">.</span><span class="n">kappa</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Eigensolver: </span><span class="si">{</span><span class="n">backend</span><span class="o">.</span><span class="n">gades_bias</span><span class="o">.</span><span class="n">eigensolver</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Modify parameters</span>
+<span class="n">backend</span><span class="o">.</span><span class="n">gades_bias</span><span class="o">.</span><span class="n">set_kappa</span><span class="p">(</span><span class="mf">0.8</span><span class="p">)</span>
+<span class="n">backend</span><span class="o">.</span><span class="n">gades_bias</span><span class="o">.</span><span class="n">set_hess_step_size</span><span class="p">(</span><span class="mf">0.001</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="using-optional-features">Using Optional Features</h3>
+<p>The factory method supports all GADESBias options:</p>
+<div class="highlight"><pre><span></span><code><span class="n">backend</span> <span class="o">=</span> <span class="n">ASEBackend</span><span class="o">.</span><span class="n">with_gades</span><span class="p">(</span>
+    <span class="n">atoms</span><span class="o">=</span><span class="n">atoms</span><span class="p">,</span>
+    <span class="n">base_calc</span><span class="o">=</span><span class="n">base_calc</span><span class="p">,</span>
+    <span class="n">bias_atom_indices</span><span class="o">=</span><span class="n">indices</span><span class="p">,</span>
+    <span class="n">hess_func</span><span class="o">=</span><span class="n">hessian</span><span class="p">,</span>
+    <span class="n">clamp_magnitude</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+    <span class="n">kappa</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+    <span class="n">interval</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span>
+    <span class="c1"># Optional parameters:</span>
+    <span class="n">stability_interval</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>           <span class="c1"># Check stability every 500 steps</span>
+    <span class="n">logfile_prefix</span><span class="o">=</span><span class="s2">&quot;simulation&quot;</span><span class="p">,</span>      <span class="c1"># Write logs to simulation_*.log</span>
+    <span class="n">eigensolver</span><span class="o">=</span><span class="s2">&quot;lanczos&quot;</span><span class="p">,</span>            <span class="c1"># Use Lanczos instead of full eigendecomposition</span>
+    <span class="n">lanczos_iterations</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span>            <span class="c1"># Number of Lanczos iterations</span>
+    <span class="n">use_bofill_update</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>           <span class="c1"># Use Bofill Hessian approximation</span>
+    <span class="n">full_hessian_interval</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>         <span class="c1"># Recompute full Hessian every 50 bias updates</span>
+    <span class="n">target_temperature</span><span class="o">=</span><span class="mf">300.0</span><span class="p">,</span>         <span class="c1"># For stability checking</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="manual-initialization-legacy">Manual Initialization (Legacy)</h3>
+<p>The manual 4-step pattern is still supported for advanced use cases where you need more control:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">GADES</span><span class="w"> </span><span class="kn">import</span> <span class="n">GADESBias</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">GADES.backend</span><span class="w"> </span><span class="kn">import</span> <span class="n">ASEBackend</span><span class="p">,</span> <span class="n">GADESCalculator</span>
+
+<span class="c1"># Create components manually</span>
+<span class="n">force_bias</span> <span class="o">=</span> <span class="n">GADESBias</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">biased_force</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">...</span><span class="p">)</span>
+<span class="n">gades_calc</span> <span class="o">=</span> <span class="n">GADESCalculator</span><span class="p">(</span><span class="n">base_calc</span><span class="p">,</span> <span class="n">force_bias</span><span class="p">)</span>
+<span class="n">backend</span> <span class="o">=</span> <span class="n">ASEBackend</span><span class="p">(</span><span class="n">gades_calc</span><span class="p">,</span> <span class="n">atoms</span><span class="p">)</span>
+<span class="n">force_bias</span><span class="o">.</span><span class="n">backend</span> <span class="o">=</span> <span class="n">backend</span>  <span class="c1"># Don&#39;t forget this!</span>
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Remember to wire the backend</p>
+<p>If using manual initialization, you <strong>must</strong> set <code>force_bias.backend = backend</code>
+after creating the ASEBackend, or GADES will fail at runtime.</p>
+</div>
+<h2 id="comparison-with-openmm-backend">Comparison with OpenMM Backend</h2>
+<p>The OpenMM backend doesn't have the same circular dependency issue because OpenMM uses a different force application mechanism:</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>ASE Backend</th>
+<th>OpenMM Backend</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Force application</td>
+<td>Via GADESCalculator wrapper</td>
+<td>Via CustomExternalForce</td>
+</tr>
+<tr>
+<td>Bias storage</td>
+<td>In calculator results</td>
+<td>In OpenMM context</td>
+</tr>
+<tr>
+<td>Circular dependency</td>
+<td>Yes (solved by factory)</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Recommended pattern</td>
+<td><code>ASEBackend.with_gades()</code></td>
+<td>Direct <code>OpenMMBackend()</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="summary">Summary</h2>
+<ul>
+<li>Use <code>ASEBackend.with_gades()</code> for the simplest and safest initialization</li>
+<li>The factory method handles all internal wiring automatically</li>
+<li>Access <code>backend.gades_bias</code> to read or modify GADES parameters</li>
+<li>The circular dependency is a consequence of tight integration between force computation and bias application</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.indexes", "toc.integrate", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
