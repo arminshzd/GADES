@@ -140,7 +140,7 @@ backend = ASEBackend.with_gades(
 
 See the [Large Systems Guide](https://arminshzd.github.io/GADES/guides/large_systems/) for details on eigensolver options and accuracy considerations.
 
-## Implemention notes
+## Implementation notes
 
 The `GADESBias` class provides the generic implementation of the GADES bias applied to any MD engine, or backend, such as OpenMM and ASE.
 
