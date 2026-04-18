@@ -371,3 +371,21 @@ class TestStep3Run:
                   coherence_threshold=0.8)
         if len(out.cluster_ids) > 0:
             assert np.all(out.cluster_coherence >= 0.8)
+
+    def test_pca_reduction_finds_clusters(self):
+        """PCA preprocessing should still find clusters in high-dim feature space."""
+        # Build high-dimensional Phi by padding the 2-D blobs with noise dims
+        step1, step2_2d = _make_clustered(n_per_cluster=80, n_clusters=3, seed=5)
+        rng     = np.random.default_rng(5)
+        Phi_hd  = np.hstack([step2_2d.Phi, rng.standard_normal((len(step1.U), 40))])
+        step2_hd = _make_step2(Phi_hd)
+        # Without PCA, high dim likely kills HDBSCAN; with PCA it should recover
+        out = run(step2_hd, step1, min_cluster_size=10, min_samples=3,
+                  n_pca_components=5)
+        assert len(out.cluster_ids) > 0
+
+    def test_pca_labels_length_unchanged(self):
+        step1, step2 = _make_clustered(n_per_cluster=60)
+        out = run(step2, step1, min_cluster_size=10, min_samples=3,
+                  n_pca_components=2)
+        assert len(out.labels) == len(step1.U)

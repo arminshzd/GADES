@@ -216,12 +216,21 @@ def _subdivide_incoherent(
 
 # ── public entry point ────────────────────────────────────────────────────────
 
+def _pca_reduce(Phi: np.ndarray, n_components: int) -> np.ndarray:
+    """Project Phi onto its top-*n_components* principal components."""
+    n_components = min(n_components, Phi.shape[1], Phi.shape[0] - 1)
+    Phi_c = Phi - Phi.mean(axis=0)
+    _, _, Vt = np.linalg.svd(Phi_c, full_matrices=False)
+    return Phi_c @ Vt[:n_components].T
+
+
 def run(
     step2:               Step2Result,
     step1:               Step1Result,
-    min_cluster_size:    int   = 20,
-    min_samples:         int   = 5,
-    coherence_threshold: float = 0.8,
+    min_cluster_size:    int            = 20,
+    min_samples:         int            = 5,
+    coherence_threshold: float          = 0.8,
+    n_pca_components:    Optional[int]  = None,
 ) -> Step3Result:
     """
     Execute Step 3 of the GADES CV workflow.
@@ -237,6 +246,12 @@ def run(
         min_samples:         HDBSCAN ``min_samples`` (≈ 5).
         coherence_threshold: Clusters with s_C below this are subdivided
                              (default 0.8).
+        n_pca_components:    If set, reduce Φ to this many PCA components
+                             before clustering.  Recommended when the feature
+                             dimension (2K+5) is large relative to N: HDBSCAN's
+                             density estimates degrade in high dimensions and
+                             label all points as noise.  ``None`` clusters on
+                             the full Φ (default).
 
     Returns:
         :class:`Step3Result` with cluster labels and per-cluster summary.
@@ -250,8 +265,14 @@ def run(
             "Install one: `pip install scikit-learn` or `pip install hdbscan`."
         )
 
+    # ── optional dimensionality reduction ─────────────────────────────────────
+    if n_pca_components is not None:
+        Phi_cluster = _pca_reduce(step2.Phi, n_pca_components)
+    else:
+        Phi_cluster = step2.Phi
+
     # ── primary clustering ────────────────────────────────────────────────────
-    labels = _run_hdbscan(step2.Phi, min_cluster_size, min_samples).astype(np.int64)
+    labels = _run_hdbscan(Phi_cluster, min_cluster_size, min_samples).astype(np.int64)
 
     # ── mode-coherence check and subdivision ──────────────────────────────────
     if (labels >= 0).any():
