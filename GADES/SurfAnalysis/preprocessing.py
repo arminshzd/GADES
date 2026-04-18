@@ -132,12 +132,29 @@ def load_logs(prefix: str) -> SnapshotData:
     M   = pos_flat.shape[1] // 3
     dof = 3 * M
 
+    # Reconstruct symmetric Hessian — support both storage formats:
+    #   full matrix  : ncols == dof²            (legacy)
+    #   upper triangle: ncols == dof*(dof+1)//2 (current, ~50% smaller)
+    ncols = H_flat.shape[1]
+    if ncols == dof * dof:
+        hess = H_flat.reshape(N, dof, dof)
+    elif ncols == dof * (dof + 1) // 2:
+        hess = np.zeros((N, dof, dof), dtype=H_flat.dtype)
+        rows, cols = np.triu_indices(dof)
+        hess[:, rows, cols] = H_flat
+        hess[:, cols, rows] = H_flat   # fill lower triangle
+    else:
+        raise ValueError(
+            f"Cannot interpret _hess.log: expected {dof*dof} (full) or "
+            f"{dof*(dof+1)//2} (upper-triangle) columns per row, got {ncols}."
+        )
+
     return SnapshotData(
         steps  = steps_pos,
         pos    = pos_flat.reshape(N, M, 3),
         U      = U_data[:, 0],
         forces = F_flat.reshape(N, M, 3),
-        hess   = H_flat.reshape(N, dof, dof),
+        hess   = hess,
     )
 
 

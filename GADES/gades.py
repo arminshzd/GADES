@@ -316,7 +316,7 @@ class GADESBias:
 
             self._hess_log = open(f"{logfile_prefix}_hess.log", "w")
             self._hess_log.write("# Hessian of the biased-atom subspace at each bias step\n")
-            self._hess_log.write("# Columns: step, Hessian elements (row-major); unavailable for lanczos_hvp\n")
+            self._hess_log.write("# Columns: step, upper-triangle elements (row-major, i<=j); unavailable for lanczos_hvp\n")
             self._hess_log.flush()
 
             self._pos_log = open(f"{logfile_prefix}_pos.log", "w")
@@ -668,7 +668,9 @@ class GADESBias:
             self._forces_log.write(f"{step} " + " ".join(map(str, forces_u.flatten())) + "\n")
             self._forces_log.flush()
         if self._hess_log is not None and hess is not None:
-            self._hess_log.write(f"{step} " + " ".join(map(str, hess.flatten())) + "\n")
+            n = hess.shape[0]
+            vals = hess[np.triu_indices(n)]
+            self._hess_log.write(f"{step} " + " ".join(f"{v:.8g}" for v in vals) + "\n")
             self._hess_log.flush()
         if self._pos_log is not None:
             pos_biased = positions[self.bias_atom_indices, :]
