@@ -258,6 +258,28 @@ def project_hessian(
 
 # ── per-snapshot diagonalisation and scalar computation ───────────────────────
 
+def _parse_hess_line(values: np.ndarray, dof: int) -> np.ndarray:
+    """Reconstruct a symmetric (dof×dof) Hessian from a flat log row.
+
+    Accepts both the legacy full-matrix format (dof² values) and the current
+    upper-triangle format (dof(dof+1)/2 values).
+    """
+    n_full  = dof * dof
+    n_upper = dof * (dof + 1) // 2
+    if len(values) == n_full:
+        return values.reshape(dof, dof)
+    if len(values) == n_upper:
+        H = np.zeros((dof, dof))
+        rows, cols = np.triu_indices(dof)
+        H[rows, cols] = values
+        H[cols, rows] = values
+        return H
+    raise ValueError(
+        f"Cannot interpret Hessian row: expected {n_full} (full) or "
+        f"{n_upper} (upper-triangle) values, got {len(values)}."
+    )
+
+
 def _diagonalise(H_proj: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Return eigenvalues and eigenvectors of H_proj, sorted ascending."""
     w, v = np.linalg.eigh(H_proj)
@@ -314,14 +336,29 @@ def run(
         - Snapshots where the Hessian has no positive eigenvalues get ``A = NaN``.
         - ``spectral_gap`` is set to ``NaN`` when fewer than two non-rigid modes
           exist (degenerate or very small subsystem).
+        - ``_hess.log`` is streamed line-by-line so only one snapshot's Hessian
+          is held in memory at a time.  The other log files (pos, epot, forces)
+          are loaded eagerly — they are O(N·M) and negligibly small.
     """
-    data = load_logs(logfile_prefix)
-    N, M, _ = data.pos.shape
-    dof     = 3 * M
-    beta    = 1.0 / (kB * temperature)
+    # ── load small files eagerly ──────────────────────────────────────────────
+    steps_pos, pos_flat = _read_log(f"{logfile_prefix}_pos.log")
+    steps_U,   U_data   = _read_log(f"{logfile_prefix}_epot.log")
+    steps_F,   F_flat   = _read_log(f"{logfile_prefix}_forces.log")
+
+    for steps, name in [(steps_U, "epot"), (steps_F, "forces")]:
+        if not np.array_equal(steps_pos, steps):
+            raise ValueError(
+                f"Step mismatch between pos.log and {name}.log. "
+                "All four log files must come from the same run."
+            )
+
+    N   = len(steps_pos)
+    M   = pos_flat.shape[1] // 3
+    dof = 3 * M
+    beta = 1.0 / (kB * temperature)
 
     # Determine n_rigid from the first snapshot
-    _, n_rigid = _build_projector(data.pos[0], masses)
+    _, n_rigid = _build_projector(pos_flat[0].reshape(M, 3), masses)
     n_nontrivial = dof - n_rigid
     K = min(n_eigvecs, n_nontrivial)
 
@@ -340,49 +377,75 @@ def run(
     morse_index  = np.empty(N, dtype=np.int64)
     spectral_gap = np.empty(N)
 
-    for i in range(N):
-        P, _ = _build_projector(data.pos[i], masses)
-        H_proj = P @ data.hess[i] @ P
-        H_proj = 0.5 * (H_proj + H_proj.T)
-        w, v   = _diagonalise(H_proj)
+    # ── stream _hess.log — one snapshot at a time ─────────────────────────────
+    hess_path = f"{logfile_prefix}_hess.log"
+    i = 0
+    with open(hess_path) as fh:
+        for line in fh:
+            if line.startswith('#') or not line.strip():
+                continue
+            if i >= N:
+                raise ValueError(
+                    f"{hess_path} has more data rows than the {N} steps in pos.log."
+                )
+            parts = line.split()
+            step  = int(parts[0])
+            if step != steps_pos[i]:
+                raise ValueError(
+                    f"Step mismatch at row {i}: pos.log has step {steps_pos[i]}, "
+                    f"hess.log has step {step}."
+                )
 
-        # Identify non-rigid modes: eigenvectors in col(P) have ‖P v‖ ≈ 1;
-        # rigid-body modes (null(P)) have ‖P v‖ ≈ 0.  Threshold 0.5 cleanly
-        # separates them regardless of eigenvalue sign order.
-        proj_norms     = np.linalg.norm(P @ v, axis=0)
-        non_rigid_mask = proj_norms > 0.5
-        w_nt = w[non_rigid_mask]
-        v_nt = v[:, non_rigid_mask]
+            H = _parse_hess_line(np.array(parts[1:], dtype=np.float64), dof)
 
-        if len(w_nt) != n_nontrivial:
-            warnings.warn(
-                f"Snapshot {i}: expected {n_nontrivial} non-rigid modes, "
-                f"found {len(w_nt)}. Snapshot skipped/trimmed.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            # Trim or zero-pad to keep array shapes consistent
-            pad = n_nontrivial - len(w_nt)
-            w_nt = np.pad(w_nt, (0, max(pad, 0)))[:n_nontrivial]
-            v_nt = np.pad(v_nt, ((0, 0), (0, max(pad, 0))))[:, :n_nontrivial]
+            pos_i    = pos_flat[i].reshape(M, 3)
+            forces_i = F_flat[i].reshape(M, 3)
 
-        eigenvalues[i]  = w_nt
-        eigenvectors[i] = v_nt[:, :K].T   # (K, dof) — row k = k-th soft mode
+            P, _ = _build_projector(pos_i, masses)
+            H_proj = P @ H @ P
+            H_proj = 0.5 * (H_proj + H_proj.T)
+            w, v   = _diagonalise(H_proj)
 
-        morse_index[i]  = int(np.sum(w_nt < 0))
+            # Identify non-rigid modes: eigenvectors in col(P) have ‖P v‖ ≈ 1;
+            # rigid-body modes (null(P)) have ‖P v‖ ≈ 0.  Threshold 0.5 cleanly
+            # separates them regardless of eigenvalue sign order.
+            proj_norms     = np.linalg.norm(P @ v, axis=0)
+            non_rigid_mask = proj_norms > 0.5
+            w_nt = w[non_rigid_mask]
+            v_nt = v[:, non_rigid_mask]
 
-        spectral_gap[i] = (w_nt[1] - w_nt[0]) if n_nontrivial >= 2 else np.nan
+            if len(w_nt) != n_nontrivial:
+                warnings.warn(
+                    f"Snapshot {i}: expected {n_nontrivial} non-rigid modes, "
+                    f"found {len(w_nt)}. Snapshot skipped/trimmed.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                pad  = n_nontrivial - len(w_nt)
+                w_nt = np.pad(w_nt, (0, max(pad, 0)))[:n_nontrivial]
+                v_nt = np.pad(v_nt, ((0, 0), (0, max(pad, 0))))[:, :n_nontrivial]
 
-        A[i] = _quasiharmonic_free_energy(data.U[i], w_nt, beta)
+            eigenvalues[i]  = w_nt
+            eigenvectors[i] = v_nt[:, :K].T   # (K, dof) — row k = k-th soft mode
+            morse_index[i]  = int(np.sum(w_nt < 0))
+            spectral_gap[i] = (w_nt[1] - w_nt[0]) if n_nontrivial >= 2 else np.nan
+            A[i]            = _quasiharmonic_free_energy(U_data[i, 0], w_nt, beta)
 
-        # f_∥ = F · v₁  (v₁ = softest non-rigid eigenvector)
-        f_flat        = data.forces[i].flatten()
-        f_parallel[i] = float(np.dot(f_flat, v_nt[:, 0]))
-        F_norm[i]     = float(np.linalg.norm(f_flat))
+            # f_∥ = F · v₁  (v₁ = softest non-rigid eigenvector)
+            f_flat        = forces_i.flatten()
+            f_parallel[i] = float(np.dot(f_flat, v_nt[:, 0]))
+            F_norm[i]     = float(np.linalg.norm(f_flat))
+
+            i += 1
+
+    if i != N:
+        raise ValueError(
+            f"{hess_path} has {i} data rows but pos.log has {N}."
+        )
 
     return Step1Result(
-        steps        = data.steps,
-        U            = data.U,
+        steps        = steps_pos,
+        U            = U_data[:, 0],
         A            = A,
         F_norm       = F_norm,
         f_parallel   = f_parallel,
