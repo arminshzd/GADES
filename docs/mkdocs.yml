@@ -59,7 +59,6 @@ nav:
     - AIB9: examples/AIB9.md
     - Argon Crystal (ASE): examples/ase.md
     - Protein Blueprint: examples/protein.md
-    - Sulfadiazine: examples/sulf.md
   - API:
     - GADES: reference/GADES.md
     - Backend: reference/backend.md

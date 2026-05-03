@@ -1,80 +1,59 @@
-# Protein Simulation Blueprint
+# OpenMM Script Templates
 
-The `examples/BluePrint/` directory contains two ready-to-use OpenMM script templates for running GADES on a full solvated protein system. The example system is the 2-SRC kinase (`2src_ref_frame.pdb`), simulated in the NPT ensemble with the AMBER14 force field.
+The `examples/BluePrint/` directory contains two template scripts showing the correct structure for setting up a GADES run with OpenMM. They use a PDB file as a placeholder input — the scripts are not intended to run as-is, but to illustrate the required boilerplate and the order in which things must be wired together.
 
 **Files:** `examples/BluePrint/`
 
 | File | Description |
 |---|---|
-| `sys_example.py` | Bias all non-water heavy atoms |
-| `sys_example2.py` | Bias backbone atoms only (CA, C); factory-function pattern |
-| `2src_ref_frame.pdb` | 2-SRC kinase reference structure |
+| `sys_example.py` | Template: bias all non-water heavy atoms |
+| `sys_example2.py` | Template: bias backbone atoms only (CA, C); factory-function pattern |
+| `2src_ref_frame.pdb` | Placeholder PDB file (example input only) |
 
 ---
 
-## Common setup
+## Required structure for any OpenMM run
 
-Both scripts share the same system setup:
+Both templates demonstrate the same essential pattern. The ordering of these steps matters.
+
+### 1. Load topology and choose biased atoms
 
 ```python
-# Force field
-forcefield = app.ForceField(
-    'amber14/protein.ff14SB.xml',
-    'amber14/lipid17.xml',
-    'amber14/tip3p.xml',
-)
+pdb = app.PDBFile("your_system.pdb")
 
-# System
+biasing_atom_ids = np.array([
+    atom.index for atom in pdb.topology.atoms()
+    if atom.name == 'CA' or atom.name == 'C'   # adjust selection as needed
+])
+```
+
+### 2. Build the system and integrator
+
+```python
+forcefield = app.ForceField('amber14/protein.ff14SB.xml', 'amber14/tip3p.xml')
+
 system = forcefield.createSystem(
     pdb.topology,
     nonbondedMethod=app.PME,
     constraints=app.HBonds,
 )
 
-# NPT ensemble
-barostat = MonteCarloBarostat(1 * unit.bar, 300 * unit.kelvin)
-system.addForce(barostat)
-
-# Integrator
-integrator = LangevinIntegrator(
-    300 * unit.kelvin,
-    1 / unit.picosecond,
-    2 * unit.femtoseconds,
-)
+integrator = LangevinIntegrator(300 * unit.kelvin, 1 / unit.picosecond, 2 * unit.femtoseconds)
 ```
 
-The GADES force must be added to the system **before** creating the `Simulation` object:
+### 3. Add the GADES force before creating the Simulation
+
+The `CustomExternalForce` object must be added to the system **before** `app.Simulation` is constructed. OpenMM freezes the force list at simulation creation time.
 
 ```python
 GAD_force = createGADESBiasForce(system.getNumParticles())
-system.addForce(GAD_force)
+system.addForce(GAD_force)                         # must come before Simulation(...)
 
 simulation = app.Simulation(pdb.topology, system, integrator, platform)
+simulation.context.setPositions(pdb.positions)
 ```
 
----
-
-## `sys_example.py` — All heavy atoms
-
-Biases every non-water atom. Suitable for exploratory runs on smaller proteins.
-
-```python
-biasing_atom_ids = np.array([
-    atom.index for atom in pdb.topology.atoms()
-    if atom.residue.name != 'HOH'
-])
-```
-
-### GADES parameters
-
-| Parameter | Value |
-|---|---|
-| `kappa` | 0.9 |
-| `clamp_magnitude` | 1000 |
-| `interval` | 200 |
-| `stability_interval` | 1000 |
-
-### Full reporter setup
+### 4. Create the backend and attach the reporter
 
 ```python
 backend = OpenMMBackend(simulation)
@@ -95,28 +74,32 @@ if BIASED:
     )
 ```
 
-!!! tip
-    Biasing all heavy atoms makes the Hessian very large (3N × 3N for N heavy atoms). For production runs on large proteins, consider using the backbone-only template below to reduce computational cost.
-
 ---
 
-## `sys_example2.py` — Backbone atoms only
+## Template variants
 
-A more practical template for large proteins. Biases only Cα and C backbone atoms, dramatically reducing the Hessian size while still capturing the dominant conformational dynamics.
+### `sys_example.py` — All non-water atoms
+
+Shows the minimal flat-script pattern. Biases all heavy atoms (non-water):
 
 ```python
 biasing_atom_ids = np.array([
     atom.index for atom in pdb.topology.atoms()
-    if atom.name == 'CA' or atom.name == 'C'
+    if atom.residue.name != 'HOH'
 ])
 ```
 
-This script also wraps system creation in a `generate_simulation()` factory function, keeping setup logic separate from the main execution block — a cleaner pattern for scripts that may need to reinitialise the simulation (e.g., after instability):
+!!! tip
+    For large proteins this makes the Hessian very expensive (3N × 3N). Use the backbone-only selection below in practice.
+
+### `sys_example2.py` — Backbone atoms, factory-function pattern
+
+Biases only Cα and C backbone atoms and wraps system creation in a `generate_simulation()` function. This is the cleaner pattern for production scripts, particularly if the simulation may need to be reinitialised:
 
 ```python
 def generate_simulation():
-    pdb = app.PDBFile("2src_ref_frame.pdb")
-    # ... build system, add forces, create reporters ...
+    pdb = app.PDBFile("your_system.pdb")
+    # ... build system, add GAD_force, create reporters ...
     return simulation, GAD_force, biasing_atom_ids
 
 simulation, GAD_force, biasing_atom_ids = generate_simulation()
@@ -127,14 +110,12 @@ backend = OpenMMBackend(simulation)
 
 ## Adapting to your system
 
-To use these templates with a different protein:
-
-1. Replace `2src_ref_frame.pdb` with your prepared PDB file (protonated, solvated, equilibrated).
-2. Update the `biasing_atom_ids` selection to match your atom naming.
-3. Adjust `KAPPA`, `CLAMP_MAGNITUDE`, and `BIAS_UPDATE_FREQ` for your system size.
+1. Replace the PDB file with your own prepared structure (protonated, solvated, equilibrated).
+2. Update the `biasing_atom_ids` selection to match your needs.
+3. Tune `KAPPA`, `CLAMP_MAGNITUDE`, and `BIAS_UPDATE_FREQ` for your system size — larger systems need larger intervals to keep the Hessian cost manageable.
 
 !!! note "Force field files"
-    The scripts reference standard AMBER14 XML files bundled with OpenMM (`amber14/protein.ff14SB.xml`, etc.). If your system requires custom parameters, add additional XML files to the `ForceField` constructor.
+    The templates reference AMBER14 XML files bundled with OpenMM. If your system requires custom parameters, add the relevant XML files to the `ForceField` constructor.
 
 ---
 
