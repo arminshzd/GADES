@@ -1,0 +1,20 @@
+; em.mdp
+
+integrator	= steep		; steepest descent
+emtol		= 500.0  	; max force tolerance threshold in kJ/mol.nm
+emstep          = 0.01          ; step size / nm
+nsteps		= 10000		; # steps
+
+nstlist		= 1		; neighbor list update frequency / steps
+rlist		= 1.0		; neighbor list cutoff / nm
+coulombtype	= PME		; long range electrostatic treatment
+rcoulomb	= 1.0		; real-space electrostatic cut-off / nm
+rvdw		= 1.0		; van der Waals cut-off / nm
+pbc		= xyz 		; periodic boundary conditions
+
+nstxout         = 10		; coordinate write frequency to trr trajectory file / steps
+nstvout         = 0		; velocity write frequency to trr trajectory file / steps
+nstfout         = 0		; force write frequency to trr trajectory file / steps
+nstlog          = 10		; log write frequency / steps
+nstcalcenergy   = 10		; energy calculation frequency / steps
+nstenergy       = 10		; energy write frequency / steps
