@@ -1,0 +1,1362 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://arminshzd.github.io/GADES/guides/openmm_integration/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../ase_integration/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../imgs/GADES_favicon_b.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>OpenMM Integration - GADES</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#openmm-integration-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="GADES" class="md-header__button md-logo" aria-label="GADES" data-md-component="logo">
+      
+  <img src="../../imgs/GADES_favicon_b.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            GADES
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              OpenMM Integration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/arminshzd/GADES" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="GADES" class="md-nav__button md-logo" aria-label="GADES" data-md-component="logo">
+      
+  <img src="../../imgs/GADES_favicon_b.png" alt="logo">
+
+    </a>
+    GADES
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/arminshzd/GADES" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenMM Integration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenMM Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Start
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How it works
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How it works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-gades-bias-force" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The GADES bias force
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#force-groups" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Force groups
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-reporter-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Reporter pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup constraints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Setup constraints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-gades-force-must-be-added-before-appsimulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The GADES force must be added before app.Simulation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openmmbackend-takes-the-simulation-not-the-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenMMBackend takes the Simulation, not the System
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#comparison-with-the-ase-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Comparison with the ASE backend
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key parameters
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parameter-recommendations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parameter recommendations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Parameter recommendations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#kappa" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        kappa
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stability_interval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stability_interval
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hess_func" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        hess_func
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#advanced-options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Advanced options
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Advanced options">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#eigensolver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Eigensolver
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bofill-hessian-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bofill Hessian update
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stability-checking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stability checking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-without-bias" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running without bias
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ase_integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ASE Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../large_systems/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Large Systems
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../examples/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Examples
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/MB_pot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Müller-Brown
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/AIB9/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AIB9
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/ase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Argon Crystal (ASE)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/protein/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Protein Blueprint
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/GADES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GADES
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/backend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/utils/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Utils
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="openmm-integration-guide">OpenMM Integration Guide</h1>
+<p>This guide explains how to use GADES with OpenMM, covering the architecture behind the integration and the constraints you need to respect when setting up your simulation.</p>
+<h2 id="quick-start">Quick Start</h2>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">GADES</span><span class="w"> </span><span class="kn">import</span> <span class="n">createGADESBiasForce</span><span class="p">,</span> <span class="n">GADESForceUpdater</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">GADES.backend</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenMMBackend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">GADES.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_hessian_force_fd_richardson</span> <span class="k">as</span> <span class="n">hessian</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">openmm.app</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">app</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openmm</span><span class="w"> </span><span class="kn">import</span> <span class="n">unit</span><span class="p">,</span> <span class="n">Platform</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">openmm.openmm</span><span class="w"> </span><span class="kn">import</span> <span class="n">LangevinIntegrator</span>
+
+<span class="c1"># 1. Load topology</span>
+<span class="n">pdb</span> <span class="o">=</span> <span class="n">app</span><span class="o">.</span><span class="n">PDBFile</span><span class="p">(</span><span class="s2">&quot;your_system.pdb&quot;</span><span class="p">)</span>
+<span class="n">forcefield</span> <span class="o">=</span> <span class="n">app</span><span class="o">.</span><span class="n">ForceField</span><span class="p">(</span><span class="s1">&#39;amber14/protein.ff14SB.xml&#39;</span><span class="p">,</span> <span class="s1">&#39;amber14/tip3p.xml&#39;</span><span class="p">)</span>
+<span class="n">system</span> <span class="o">=</span> <span class="n">forcefield</span><span class="o">.</span><span class="n">createSystem</span><span class="p">(</span><span class="n">pdb</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">nonbondedMethod</span><span class="o">=</span><span class="n">app</span><span class="o">.</span><span class="n">PME</span><span class="p">,</span> <span class="n">constraints</span><span class="o">=</span><span class="n">app</span><span class="o">.</span><span class="n">HBonds</span><span class="p">)</span>
+
+<span class="c1"># 2. Choose atoms to bias</span>
+<span class="n">biasing_atom_ids</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span>
+    <span class="n">atom</span><span class="o">.</span><span class="n">index</span> <span class="k">for</span> <span class="n">atom</span> <span class="ow">in</span> <span class="n">pdb</span><span class="o">.</span><span class="n">topology</span><span class="o">.</span><span class="n">atoms</span><span class="p">()</span> <span class="k">if</span> <span class="n">atom</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;CA&#39;</span>
+<span class="p">])</span>
+
+<span class="c1"># 3. Add GADES force to the system — must happen before Simulation is created</span>
+<span class="n">GAD_force</span> <span class="o">=</span> <span class="n">createGADESBiasForce</span><span class="p">(</span><span class="n">system</span><span class="o">.</span><span class="n">getNumParticles</span><span class="p">())</span>
+<span class="n">system</span><span class="o">.</span><span class="n">addForce</span><span class="p">(</span><span class="n">GAD_force</span><span class="p">)</span>
+
+<span class="c1"># 4. Create simulation</span>
+<span class="n">integrator</span> <span class="o">=</span> <span class="n">LangevinIntegrator</span><span class="p">(</span><span class="mi">300</span> <span class="o">*</span> <span class="n">unit</span><span class="o">.</span><span class="n">kelvin</span><span class="p">,</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">unit</span><span class="o">.</span><span class="n">picosecond</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">unit</span><span class="o">.</span><span class="n">femtoseconds</span><span class="p">)</span>
+<span class="n">simulation</span> <span class="o">=</span> <span class="n">app</span><span class="o">.</span><span class="n">Simulation</span><span class="p">(</span><span class="n">pdb</span><span class="o">.</span><span class="n">topology</span><span class="p">,</span> <span class="n">system</span><span class="p">,</span> <span class="n">integrator</span><span class="p">)</span>
+<span class="n">simulation</span><span class="o">.</span><span class="n">context</span><span class="o">.</span><span class="n">setPositions</span><span class="p">(</span><span class="n">pdb</span><span class="o">.</span><span class="n">positions</span><span class="p">)</span>
+<span class="n">simulation</span><span class="o">.</span><span class="n">minimizeEnergy</span><span class="p">()</span>
+
+<span class="c1"># 5. Attach GADES reporter</span>
+<span class="n">backend</span> <span class="o">=</span> <span class="n">OpenMMBackend</span><span class="p">(</span><span class="n">simulation</span><span class="p">)</span>
+<span class="n">simulation</span><span class="o">.</span><span class="n">reporters</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+    <span class="n">GADESForceUpdater</span><span class="p">(</span>
+        <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span>
+        <span class="n">biased_force</span><span class="o">=</span><span class="n">GAD_force</span><span class="p">,</span>
+        <span class="n">bias_atom_indices</span><span class="o">=</span><span class="n">biasing_atom_ids</span><span class="p">,</span>
+        <span class="n">hess_func</span><span class="o">=</span><span class="n">hessian</span><span class="p">,</span>
+        <span class="n">clamp_magnitude</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+        <span class="n">kappa</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>
+        <span class="n">interval</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>
+        <span class="n">stability_interval</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>
+        <span class="n">logfile_prefix</span><span class="o">=</span><span class="s2">&quot;gades_run&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">simulation</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="mi">1_000_000</span><span class="p">)</span>
+</code></pre></div>
+<p>See the <a href="../../examples/protein/">OpenMM script templates</a> for annotated full-script examples.</p>
+<hr />
+<h2 id="how-it-works">How it works</h2>
+<h3 id="the-gades-bias-force">The GADES bias force</h3>
+<p><code>createGADESBiasForce</code> creates an OpenMM <code>CustomExternalForce</code> with the energy expression:</p>
+<div class="highlight"><pre><span></span><code>E = -fx*x - fy*y - fz*z
+</code></pre></div>
+<p>This means the force on each particle is exactly <code>(fx, fy, fz)</code> — the per-particle parameters are the force components directly. All particles are initialised with <code>(0, 0, 0)</code>, so the force has no effect until the first bias update.</p>
+<div class="highlight"><pre><span></span><code><span class="n">force</span> <span class="o">=</span> <span class="n">CustomExternalForce</span><span class="p">(</span><span class="s2">&quot;-fx*x-fy*y-fz*z&quot;</span><span class="p">)</span>
+<span class="n">force</span><span class="o">.</span><span class="n">addPerParticleParameter</span><span class="p">(</span><span class="s2">&quot;fx&quot;</span><span class="p">)</span>
+<span class="n">force</span><span class="o">.</span><span class="n">addPerParticleParameter</span><span class="p">(</span><span class="s2">&quot;fy&quot;</span><span class="p">)</span>
+<span class="n">force</span><span class="o">.</span><span class="n">addPerParticleParameter</span><span class="p">(</span><span class="s2">&quot;fz&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_particles</span><span class="p">):</span>
+    <span class="n">force</span><span class="o">.</span><span class="n">addParticle</span><span class="p">(</span><span class="n">i</span><span class="p">,</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">])</span>
+</code></pre></div>
+<h3 id="force-groups">Force groups</h3>
+<p>The GADES force is assigned to <strong>force group 1</strong>. All standard force field terms (bonded, non-bonded, PME) default to group 0. This separation is critical: when computing the Hessian, <code>OpenMMBackend.get_forces()</code> requests forces from group 0 only, so the bias does not contaminate the curvature estimate:</p>
+<div class="highlight"><pre><span></span><code><span class="n">state</span> <span class="o">=</span> <span class="n">context</span><span class="o">.</span><span class="n">getState</span><span class="p">(</span><span class="n">getForces</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">groups</span><span class="o">=</span><span class="p">{</span><span class="mi">0</span><span class="p">})</span>   <span class="c1"># unbiased forces only</span>
+</code></pre></div>
+<p>The full simulation (dynamics) includes both groups, as normal.</p>
+<div class="admonition warning">
+<p class="admonition-title">Don't reassign your force field forces to group 1</p>
+<p>If any of your physical forces are in group 1, they will be excluded from the Hessian calculation and GADES will compute the wrong curvature. All standard OpenMM force fields default to group 0, so this is only a concern if you manually set <code>setForceGroup(1)</code> on another force.</p>
+</div>
+<h3 id="the-reporter-pattern">The Reporter pattern</h3>
+<p><code>GADESForceUpdater</code> is an OpenMM <code>Reporter</code>. OpenMM calls two methods on every reporter at each relevant step:</p>
+<ul>
+<li><code>describeNextReport(simulation)</code> — returns how many steps until the next event and what data is needed</li>
+<li><code>report(simulation, state)</code> — performs the actual work</li>
+</ul>
+<p>GADES uses <code>describeNextReport</code> to schedule the next bias update, stability check, or post-bias stability check, whichever comes first. At each scheduled step, <code>report</code> either recomputes the GAD force and pushes it to the context, or removes the bias if instability is detected.</p>
+<p>Force updates are pushed with <code>updateParametersInContext</code>, which modifies the live context without rebuilding the simulation:</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">idx</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">bias_atom_indices</span><span class="p">):</span>
+    <span class="n">bias_force_object</span><span class="o">.</span><span class="n">setParticleParameters</span><span class="p">(</span><span class="n">idx</span><span class="p">,</span> <span class="n">idx</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">biased_force_values</span><span class="p">[</span><span class="n">i</span><span class="p">]))</span>
+<span class="n">bias_force_object</span><span class="o">.</span><span class="n">updateParametersInContext</span><span class="p">(</span><span class="n">simulation</span><span class="o">.</span><span class="n">context</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="setup-constraints">Setup constraints</h2>
+<h3 id="the-gades-force-must-be-added-before-appsimulation">The GADES force must be added before <code>app.Simulation</code></h3>
+<p>OpenMM finalises the force list when the <code>Simulation</code> (and its underlying <code>Context</code>) is created. Forces added after this point are not registered in the context and will have no effect.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Correct</span>
+<span class="n">GAD_force</span> <span class="o">=</span> <span class="n">createGADESBiasForce</span><span class="p">(</span><span class="n">system</span><span class="o">.</span><span class="n">getNumParticles</span><span class="p">())</span>
+<span class="n">system</span><span class="o">.</span><span class="n">addForce</span><span class="p">(</span><span class="n">GAD_force</span><span class="p">)</span>                        <span class="c1"># before Simulation</span>
+<span class="n">simulation</span> <span class="o">=</span> <span class="n">app</span><span class="o">.</span><span class="n">Simulation</span><span class="p">(</span><span class="n">topology</span><span class="p">,</span> <span class="n">system</span><span class="p">,</span> <span class="n">integrator</span><span class="p">)</span>
+
+<span class="c1"># Wrong — GAD_force will be silently ignored</span>
+<span class="n">simulation</span> <span class="o">=</span> <span class="n">app</span><span class="o">.</span><span class="n">Simulation</span><span class="p">(</span><span class="n">topology</span><span class="p">,</span> <span class="n">system</span><span class="p">,</span> <span class="n">integrator</span><span class="p">)</span>
+<span class="n">system</span><span class="o">.</span><span class="n">addForce</span><span class="p">(</span><span class="n">GAD_force</span><span class="p">)</span>                        <span class="c1"># too late</span>
+</code></pre></div>
+<h3 id="openmmbackend-takes-the-simulation-not-the-system"><code>OpenMMBackend</code> takes the Simulation, not the System</h3>
+<p>The backend wraps the live <code>Simulation</code> object (which contains the <code>Context</code>, <code>Integrator</code>, and <code>System</code>). It must be created after the simulation is initialised:</p>
+<div class="highlight"><pre><span></span><code><span class="n">backend</span> <span class="o">=</span> <span class="n">OpenMMBackend</span><span class="p">(</span><span class="n">simulation</span><span class="p">)</span>   <span class="c1"># after Simulation(...) and setPositions(...)</span>
+</code></pre></div>
+<hr />
+<h2 id="comparison-with-the-ase-backend">Comparison with the ASE backend</h2>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>OpenMM backend</th>
+<th>ASE backend</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Force application</td>
+<td><code>CustomExternalForce</code> updated via <code>updateParametersInContext</code></td>
+<td><code>GADESCalculator</code> wrapper added to bias calculator results</td>
+</tr>
+<tr>
+<td>Bias scheduling</td>
+<td>OpenMM Reporter interface (<code>describeNextReport</code> / <code>report</code>)</td>
+<td>Called inside <code>GADESCalculator.calculate()</code></td>
+</tr>
+<tr>
+<td>Circular dependency</td>
+<td>None — force object and backend are independent</td>
+<td>Yes — solved by <code>ASEBackend.with_gades()</code> factory</td>
+</tr>
+<tr>
+<td>Setup complexity</td>
+<td>Moderate — force must be added before <code>Simulation</code></td>
+<td>Handled by factory method</td>
+</tr>
+<tr>
+<td>Recommended pattern</td>
+<td><code>GADESForceUpdater</code> as reporter</td>
+<td><code>ASEBackend.with_gades()</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="key-parameters">Key parameters</h2>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Typical values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kappa</code></td>
+<td>Bias scaling factor. Controls how strongly forces are projected onto the softest mode.</td>
+<td>0.5 – 0.9</td>
+</tr>
+<tr>
+<td><code>clamp_magnitude</code></td>
+<td>Maximum per-atom bias force (kJ/mol/nm). Prevents unphysically large updates.</td>
+<td>500 – 2000</td>
+</tr>
+<tr>
+<td><code>interval</code></td>
+<td>Steps between Hessian updates. Smaller = more accurate bias direction, higher cost.</td>
+<td>200 – 2000</td>
+</tr>
+<tr>
+<td><code>stability_interval</code></td>
+<td>Steps between temperature stability checks. Bias is removed if temperature deviates too far.</td>
+<td>500 – 2000</td>
+</tr>
+<tr>
+<td><code>logfile_prefix</code></td>
+<td>If set, writes eigenvector, eigenvalue, and biased-atom trajectory logs.</td>
+<td>any string</td>
+</tr>
+</tbody>
+</table>
+<h2 id="parameter-recommendations">Parameter recommendations</h2>
+<h3 id="kappa"><code>kappa</code></h3>
+<p>Set <code>kappa=0.9</code> and control the strength of the bias through <code>clamp_magnitude</code> instead:</p>
+<div class="highlight"><pre><span></span><code><span class="n">GADESForceUpdater</span><span class="p">(</span>
+    <span class="o">...</span>
+    <span class="n">kappa</span><span class="o">=</span><span class="mf">0.9</span><span class="p">,</span>                  <span class="c1"># recommended value</span>
+    <span class="n">clamp_magnitude</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span>       <span class="c1"># adjust this to control exploration aggressiveness</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><code>kappa</code> damps <strong>all</strong> forces uniformly, while <code>clamp_magnitude</code> only acts on atoms where the bias would otherwise exceed the cap. Using a high κ with a moderate clamp gives effective exploration without over-biasing low-gradient regions.</p>
+<h3 id="stability_interval"><code>stability_interval</code></h3>
+<p>Set <code>stability_interval</code> to <code>interval // 2</code> or smaller to catch instabilities before they propagate:</p>
+<div class="highlight"><pre><span></span><code><span class="n">GADESForceUpdater</span><span class="p">(</span>
+    <span class="o">...</span>
+    <span class="n">interval</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>
+    <span class="n">stability_interval</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span>     <span class="c1"># roughly interval // 2</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="hess_func"><code>hess_func</code></h3>
+<p>Use <code>compute_hessian_force_fd_richardson</code> (Richardson-extrapolated finite differences). It is less sensitive to step size than a plain single-step finite difference and reduces numerical error in the Hessian:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">GADES.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">compute_hessian_force_fd_richardson</span> <span class="k">as</span> <span class="n">hessian</span>
+
+<span class="n">GADESForceUpdater</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">hess_func</span><span class="o">=</span><span class="n">hessian</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="advanced-options">Advanced options</h2>
+<h3 id="eigensolver">Eigensolver</h3>
+<p>By default, <code>GADESForceUpdater</code> uses <code>numpy.linalg.eigh</code> for the full Hessian eigendecomposition. For large biased subsets, this becomes expensive. Switch to Lanczos:</p>
+<div class="highlight"><pre><span></span><code><span class="n">GADESForceUpdater</span><span class="p">(</span>
+    <span class="o">...</span>
+    <span class="n">eigensolver</span><span class="o">=</span><span class="s2">&quot;lanczos&quot;</span><span class="p">,</span>        <span class="c1"># or &quot;lanczos_hvp&quot; for very large systems</span>
+    <span class="n">lanczos_iterations</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>See the <a href="../large_systems/">large systems guide</a> for details on when to use each solver.</p>
+<h3 id="bofill-hessian-update">Bofill Hessian update</h3>
+<p>To reduce the number of full Hessian evaluations, enable the Bofill quasi-Newton update, which approximates the Hessian between full recomputations:</p>
+<div class="highlight"><pre><span></span><code><span class="n">GADESForceUpdater</span><span class="p">(</span>
+    <span class="o">...</span>
+    <span class="n">use_bofill_update</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">full_hessian_interval</span><span class="o">=</span><span class="mi">2000</span><span class="p">,</span>   <span class="c1"># recompute full Hessian every 2000 steps</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="stability-checking">Stability checking</h3>
+<p><code>OpenMMBackend</code> estimates the instantaneous temperature from the kinetic energy and compares it to the integrator's target temperature. If the deviation exceeds the threshold (default 50 K), the bias is removed until the next update cycle.</p>
+<p>For integrators where temperature cannot be auto-detected (e.g. <code>VerletIntegrator</code>), set it explicitly:</p>
+<div class="highlight"><pre><span></span><code><span class="n">backend</span> <span class="o">=</span> <span class="n">OpenMMBackend</span><span class="p">(</span><span class="n">simulation</span><span class="p">,</span> <span class="n">target_temperature</span><span class="o">=</span><span class="mf">300.0</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="running-without-bias">Running without bias</h3>
+<p>Set <code>BIASED = 0</code> and skip attaching the reporter. The <code>GAD_force</code> is still added to the system (required to keep the context valid for potential later use), but with all-zero parameters it contributes nothing to the dynamics.</p>
+<div class="highlight"><pre><span></span><code><span class="n">GAD_force</span> <span class="o">=</span> <span class="n">createGADESBiasForce</span><span class="p">(</span><span class="n">system</span><span class="o">.</span><span class="n">getNumParticles</span><span class="p">())</span>
+<span class="n">system</span><span class="o">.</span><span class="n">addForce</span><span class="p">(</span><span class="n">GAD_force</span><span class="p">)</span>
+<span class="n">simulation</span> <span class="o">=</span> <span class="n">app</span><span class="o">.</span><span class="n">Simulation</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+
+<span class="c1"># No GADESForceUpdater — plain MD with zero-cost bias force</span>
+<span class="n">simulation</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="n">n_steps</span><span class="p">)</span>
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.indexes", "toc.integrate", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
