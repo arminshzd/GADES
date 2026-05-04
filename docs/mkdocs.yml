@@ -51,6 +51,7 @@ nav:
   - Home: index.md
   - Guides:
     - guides/index.md
+    - OpenMM Integration: guides/openmm_integration.md
     - ASE Integration: guides/ase_integration.md
     - Large Systems: guides/large_systems.md
   - Examples:

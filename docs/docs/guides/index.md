@@ -4,6 +4,7 @@ In-depth guides for using GADES with different simulation backends and advanced 
 
 ## Backend Integration
 
+- [OpenMM Integration](openmm_integration.md) - Using GADES with OpenMM
 - [ASE Integration](ase_integration.md) - Using GADES with the Atomic Simulation Environment
 
 ## Performance & Scaling
@@ -11,6 +12,16 @@ In-depth guides for using GADES with different simulation backends and advanced 
 - [Scaling to Large Systems](large_systems.md) - Matrix-free Lanczos for 1000+ atom systems
 
 ## Topics Covered
+
+### OpenMM Integration Guide
+
+The OpenMM integration guide covers:
+
+- Quick start with `GADESForceUpdater` as an OpenMM reporter
+- How `createGADESBiasForce` works and why force groups matter
+- Setup constraints (force must be added before `Simulation`)
+- Advanced options: eigensolver, Bofill update, stability checking
+- Comparison with the ASE backend
 
 ### ASE Integration Guide
 

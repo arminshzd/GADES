@@ -24,3 +24,26 @@ and install from inside the `GADES` directory using `pip`
 ``` bash
 pip install -e .
 ```
+
+## Development
+
+To set up a development environment with test dependencies:
+
+```bash
+pip install -e ".[dev]"
+```
+
+To run the test suite:
+
+```bash
+pytest
+```
+
+To run tests with coverage:
+
+```bash
+pytest --cov=GADES --cov-report=term-missing
+```
+
+!!! note "Under active development"
+    GADES is still under active development. APIs may change between releases.

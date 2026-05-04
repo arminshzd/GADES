@@ -275,9 +275,64 @@ The OpenMM backend doesn't have the same circular dependency issue because OpenM
 | Circular dependency | Yes (solved by factory) | No |
 | Recommended pattern | `ASEBackend.with_gades()` | Direct `OpenMMBackend()` |
 
+## Parameter Recommendations
+
+### `target_temperature`
+
+!!! warning "Always set `target_temperature` explicitly"
+    Always pass `target_temperature` (in Kelvin) to `ASEBackend.with_gades()` or `ASEBackend()`:
+
+    ```python
+    backend = ASEBackend.with_gades(
+        ...,
+        target_temperature=300.0,   # Kelvin
+    )
+    ```
+
+    Without it, GADES tries to infer the temperature from the integrator object. ASE integrators store temperature under different attribute names and in different units depending on the integrator type — `Langevin` stores it as `temp` in eV, `NVTBerendsen` stores it as `temperature` in Kelvin, and `NoseHooverChain` variants may not expose it at all. This auto-detection can silently fail or return the wrong value. Setting it explicitly avoids all of this.
+
+### `kappa`
+
+Set `kappa=0.9` and control the strength of the bias through `clamp_magnitude` instead:
+
+```python
+backend = ASEBackend.with_gades(
+    ...,
+    kappa=0.9,                  # recommended value
+    clamp_magnitude=1000,       # adjust this to control exploration aggressiveness
+)
+```
+
+`kappa` damps **all** forces uniformly, while `clamp_magnitude` only acts on atoms where the bias would otherwise exceed the cap. Using a high κ with a moderate clamp gives effective exploration without over-biasing low-gradient regions.
+
+### `stability_interval`
+
+Set `stability_interval` to `interval // 2` or smaller to catch instabilities before they propagate:
+
+```python
+backend = ASEBackend.with_gades(
+    ...,
+    interval=500,
+    stability_interval=200,     # roughly interval // 2
+)
+```
+
+### `hess_func`
+
+Use `compute_hessian_force_fd_richardson` (Richardson-extrapolated finite differences). It is less sensitive to step size than a plain single-step finite difference and reduces numerical error in the Hessian:
+
+```python
+from GADES.utils import compute_hessian_force_fd_richardson as hessian
+
+backend = ASEBackend.with_gades(..., hess_func=hessian)
+```
+
+---
+
 ## Summary
 
 - Use `ASEBackend.with_gades()` for the simplest and safest initialization
 - The factory method handles all internal wiring automatically
 - Access `backend.gades_bias` to read or modify GADES parameters
+- Always set `target_temperature` explicitly — auto-detection from the integrator is fragile
 - The circular dependency is a consequence of tight integration between force computation and bias application
